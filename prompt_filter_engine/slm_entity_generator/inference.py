@@ -14,15 +14,20 @@ class FineTunedAnonymizer:
         
         print(f"Loading base model from {base_model_id}...")
         # Load in fp16 if cuda is available, else float32 for CPU
-        torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
-        device_map = "auto"
+        if torch.cuda.is_available():
+            self.device = "cuda"
+            torch_dtype = torch.float16
+        else:
+            self.device = "cpu"
+            torch_dtype = torch.float32
         
         self.base_model = AutoModelForCausalLM.from_pretrained(
             base_model_id,
-            device_map=device_map,
+            device_map=None, # Disable auto device map
             torch_dtype=torch_dtype,
-            low_cpu_mem_usage=True
+            # low_cpu_mem_usage=True # Requires accelerate
         )
+        self.base_model.to(self.device)
 
         print(f"Loading adapter from {adapter_path}...")
         self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
