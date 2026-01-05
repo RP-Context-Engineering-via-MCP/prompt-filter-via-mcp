@@ -7,11 +7,12 @@ from prompt_filter_engine.slm_entity_generator.inference import FineTunedAnonymi
 class EntityValueGenerator:
     def __init__(self):
         print("Initializing Entity Value Generator...")
-        try:
-            self.address_engine = FineTunedAnonymizer()
-        except Exception as e:
-            print(f"Warning: Could not load SLM model ({e}). Address generation may fail.")
-            self.address_engine = None
+        print("Initializing Entity Value Generator (SLM DISABLED)...")
+        # try:
+        #     self.address_engine = FineTunedAnonymizer()
+        # except Exception as e:
+        #     print(f"Warning: Could not load SLM model ({e}). Address generation may fail.")
+        self.address_engine = None
 
     def generate(self, original_text: str, entity_type: str, context: dict = None) -> str:
         """
