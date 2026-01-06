@@ -118,6 +118,7 @@ class UniversalRedactor:
         enriched_entities.sort(key=lambda x: x['start'], reverse=True)
         
         redacted_text = text
+        labeled_text = text
         audit_log = []
 
         print(f"\n[INFO] Found {len(enriched_entities)} entities.")
@@ -136,6 +137,10 @@ class UniversalRedactor:
             # Since we iterate reverse, replacing is safe for indices < start
             redacted_text = redacted_text[:start] + fake_value + redacted_text[end:]
             
+            # Generate Label Value
+            label_value = f"[{label.upper()}]"
+            labeled_text = labeled_text[:start] + label_value + labeled_text[end:]
+            
             # Log
             log_entry = f"Replaced '{original_value}' with '{fake_value}' | Type: {label}"
             if context:
@@ -145,5 +150,5 @@ class UniversalRedactor:
             print(f"[LOG] {log_entry}")
 
         if return_enriched:
-            return redacted_text, audit_log, enriched_entities
-        return redacted_text, audit_log
+            return redacted_text, labeled_text, audit_log, enriched_entities
+        return redacted_text, labeled_text, audit_log

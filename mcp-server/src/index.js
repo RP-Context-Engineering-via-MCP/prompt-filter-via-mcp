@@ -49,10 +49,22 @@ mcpServer.tool(
                 ? JSON.stringify(data.enriched_analysis, null, 2)
                 : "No analysis available";
 
+            const formattedResponse = `User Prompt:
+${prompt}
+
+PII Detection Prompt:
+${data.labeled}
+
+Secured Prompt:
+${data.redacted}
+
+Analysis:
+${analysisSummary}`;
+
             return {
                 content: [{
                     type: "text",
-                    text: `Redacted Text: ${data.redacted}\n\nAnalysis:\n${analysisSummary}`
+                    text: formattedResponse
                 }]
             };
 

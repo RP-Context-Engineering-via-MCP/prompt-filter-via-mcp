@@ -24,6 +24,7 @@ class FilterRequest(BaseModel):
 class FilterResponse(BaseModel):
     original: str
     redacted: str
+    labeled: str
     enriched_analysis: list[Dict[str, Any]]
 
 @app.get("/health")
@@ -39,10 +40,11 @@ def filter_prompt(request: FilterRequest):
         raise HTTPException(status_code=503, detail="Redactor service unavailable")
     
     try:
-        clean_text, _, enriched = redactor.redact(request.prompt, return_enriched=True)
+        clean_text, labeled_text, _, enriched = redactor.redact(request.prompt, return_enriched=True)
         return FilterResponse(
             original=request.prompt,
             redacted=clean_text,
+            labeled=labeled_text,
             enriched_analysis=enriched
         )
     except Exception as e:
