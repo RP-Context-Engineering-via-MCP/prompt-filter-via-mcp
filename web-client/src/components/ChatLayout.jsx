@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import MessageList from './MessageList';
 import ChatInput from './ChatInput';
 import LLMSelectionModal from './LLMSelectionModal';
+import Sidebar from './Sidebar';
+import Header from './Header';
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 
@@ -13,20 +15,35 @@ const ChatLayout = () => {
     const [chatHistory, setChatHistory] = useState([]);
     const [currentChatId, setCurrentChatId] = useState(null);
     const [filterEnabled, setFilterEnabled] = useState(true); // Default to ON
+    const [sessionContext, setSessionContext] = useState(null); // Default to no session
     const clientRef = useRef(null);
 
-    // Load history on mount
+    // Load history and session context on mount
     useEffect(() => {
-        const savedHistory = localStorage.getItem('chatHistory');
+        const savedHistory = sessionStorage.getItem('chatHistory');
         if (savedHistory) {
             setChatHistory(JSON.parse(savedHistory));
+        }
+
+        const savedSession = localStorage.getItem('sessionContext');
+        if (savedSession) {
+            setSessionContext(JSON.parse(savedSession));
         }
     }, []);
 
     // Save history whenever it changes
     useEffect(() => {
-        localStorage.setItem('chatHistory', JSON.stringify(chatHistory));
+        sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
     }, [chatHistory]);
+
+    // Save session context whenever it changes
+    useEffect(() => {
+        if (sessionContext) {
+            localStorage.setItem('sessionContext', JSON.stringify(sessionContext));
+        } else {
+            localStorage.removeItem('sessionContext');
+        }
+    }, [sessionContext]);
 
     // Initialize MCP Client
     useEffect(() => {
@@ -142,65 +159,55 @@ const ChatLayout = () => {
         setCurrentChatId(chat.id);
     };
 
+    const handleNewChat = () => {
+        setIsLLMModalOpen(true);
+    };
+
     return (
-        <div className="flex h-screen bg-white font-sans text-black">
-            {/* Sidebar - Hidden on mobile for simplicity, or could be a drawer */}
-            <aside className="hidden md:flex flex-col w-[260px] bg-gray-50 border-r border-gray-200 p-4">
-                <div className="flex items-center gap-2 px-2 py-3 mb-6">
-                    <div className="w-8 h-8 bg-primary rounded-md flex items-center justify-center text-white font-serif font-bold cursor-pointer">M</div>
-                    <span className="font-serif font-semibold text-lg cursor-pointer">Memora</span>
-                </div>
+        <div className="flex h-screen bg-memora-bg font-sans text-black overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
+            <Sidebar
+                chatHistory={chatHistory}
+                currentChatId={currentChatId}
+                onLoadChat={loadChat}
+                onNewChat={handleNewChat}
+            />
 
-                <button
-                    onClick={() => setIsLLMModalOpen(true)}
-                    className="flex items-center gap-2 w-full px-3 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg transition-colors text-sm font-medium mb-4"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-                    </svg>
-                    New chat
-                </button>
-
-                <div className="flex-1 overflow-y-auto">
-                    <div className="px-2 text-xs font-medium text-stone-500 mb-2">Recent</div>
-                    {chatHistory.map((chat) => (
-                        <div
-                            key={chat.id}
-                            onClick={() => loadChat(chat)}
-                            className={`px-3 py-2 rounded-lg hover:bg-stone-200/50 cursor-pointer text-sm truncate text-stone-600 ${currentChatId === chat.id ? 'bg-stone-200' : ''}`}
-                        >
-                            {chat.title || 'New Chat'}
-                        </div>
-                    ))}
-                    {chatHistory.length === 0 && (
-                        <div className="px-3 py-2 text-sm text-stone-400 italic">No recent chats</div>
-                    )}
-                </div>
-
-                <div className="mt-auto px-2 py-3 text-sm text-stone-500 border-t border-stone-200/50 flex items-center gap-2 cursor-pointer hover:text-stone-700">
-                    <div className="w-6 h-6 rounded-full bg-stone-300"></div>
-                    User Account
-                </div>
-            </aside>
-
-            <main className="flex-1 flex flex-col h-full relative">
-                <header className="md:hidden flex items-center justify-between p-4 border-b border-gray-200 bg-white z-10">
-                    <div className="font-serif font-semibold text-lg">Memora</div>
-                    <button className="p-2 text-stone-500">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-                        </svg>
-                    </button>
-                </header>
-
-                <MessageList messages={messages} selectedModel={selectedModel} />
-                <ChatInput
-                    onSend={handleSend}
-                    disabled={isTyping}
-                    filterEnabled={filterEnabled}
-                    onToggleFilter={() => setFilterEnabled(!filterEnabled)}
+            <main className="flex-1 flex flex-col h-full relative w-full max-w-[1600px] mx-auto">
+                <Header
+                    selectedModel={selectedModel}
+                    sessionContext={sessionContext}
+                    onSessionContextChange={setSessionContext}
                 />
+
+                {/* Main Content Area - mimicking "Session Contexts" look but for active chat */}
+                <div className="flex-1 px-8 pb-8 min-h-0">
+                    <div className="h-full bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden relative">
+                        {/* Chat Header inside card if needed, or just cleaner layout */}
+
+                        {/* Mobile Header Toggle (simplified) */}
+                        <header className="md:hidden flex items-center justify-between p-4 border-b border-gray-100 bg-white">
+                            <div className="font-bold text-lg text-slate-800">Memora</div>
+                            <button className="p-2 text-stone-500 hover:bg-stone-100 rounded-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+                                </svg>
+                            </button>
+                        </header>
+
+                        <MessageList messages={messages} selectedModel={selectedModel} />
+
+                        <div className="p-4 bg-white border-t border-slate-50">
+                            <ChatInput
+                                onSend={handleSend}
+                                disabled={isTyping}
+                                filterEnabled={filterEnabled}
+                                onToggleFilter={() => setFilterEnabled(!filterEnabled)}
+                            />
+                        </div>
+                    </div>
+                </div>
             </main>
+
             <LLMSelectionModal
                 isOpen={isLLMModalOpen}
                 onClose={() => setIsLLMModalOpen(false)}
