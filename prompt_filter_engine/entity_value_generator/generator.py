@@ -7,6 +7,7 @@ from prompt_filter_engine.slm_entity_generator.inference import FineTunedAnonymi
 class EntityValueGenerator:
     def __init__(self):
         print("Initializing Entity Value Generator...")
+        print("Initializing Entity Value Generator...")
         try:
             self.address_engine = FineTunedAnonymizer()
         except Exception as e:
@@ -45,7 +46,7 @@ class EntityValueGenerator:
             
         else:
             # Fallback: simple masking if no generator exists
-            return f"[FAKE_{entity_type.upper()}]"
+            return f"[ANONYMIZED_{entity_type.upper()}]"
 
     def _generate_address(self, original: str, context: str) -> str:
         if self.address_engine:
@@ -53,7 +54,7 @@ class EntityValueGenerator:
                 return self.address_engine.predict(original, context=context)
             except Exception as e:
                 print(f"SLM Generation failed: {e}")
-        return "[FAKE_ADDRESS]"
+        return "[ANONYMIZED_ADDRESS]"
 
     def _generate_phone(self, context: str) -> str:
         if context == "SL":

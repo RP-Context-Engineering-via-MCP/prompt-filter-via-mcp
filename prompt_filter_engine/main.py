@@ -12,11 +12,12 @@ def main():
 
     if args.prompt:
         # CLI Mode for MCP Server
-        clean_text, log, enriched = redactor.redact(args.prompt, return_enriched=True)
+        clean_text, labeled_text, log, enriched = redactor.redact(args.prompt, return_enriched=True)
         
         response = {
             "original_text": args.prompt,
             "redacted_text": clean_text,
+            "labeled_text": labeled_text,
             "audit_log": log,
             "entities": enriched
         }
@@ -35,10 +36,11 @@ def main():
         """
         
         print("\n--- RUNNING DEMO MODE ---\n")
-        clean_text, log, enriched = redactor.redact(text, return_enriched=True)
+        clean_text, labeled_text, log, enriched = redactor.redact(text, return_enriched=True)
     
         print(f"ORIGINAL:\n{text}\n")
         print(f"ANONYMIZED:\n{clean_text}\n")
+        print(f"LABELED:\n{labeled_text}\n")
         print("=" * 80)
         print("AUDIT LOG:")
         for entry in log:
