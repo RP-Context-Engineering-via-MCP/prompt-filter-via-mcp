@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const ChatInput = ({ onSend, disabled }) => {
+const ChatInput = ({ onSend, disabled, filterEnabled, onToggleFilter }) => {
     const [input, setInput] = useState('');
     const textareaRef = useRef(null);
 
@@ -35,6 +35,22 @@ const ChatInput = ({ onSend, disabled }) => {
     return (
         <div className="w-full bg-white border-t border-gray-200 py-4 pb-6 px-4 md:px-0">
             <div className="max-w-3xl mx-auto">
+                <div className="flex items-center gap-2 mb-2 ml-1">
+                    <label className="inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            className="sr-only peer"
+                            checked={filterEnabled}
+                            onChange={onToggleFilter}
+                            disabled={disabled}
+                        />
+                        <div className="relative w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-primary-light rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+                        <span className="ms-3 text-sm font-medium text-gray-700">Prompt Filter Engine</span>
+                        <span className={`ms-2 text-xs font-bold px-1.5 py-0.5 rounded border ${filterEnabled ? 'bg-green-100 text-green-700 border-green-200' : 'bg-gray-100 text-gray-500 border-gray-200'}`}>
+                            {filterEnabled ? 'ON' : 'OFF'}
+                        </span>
+                    </label>
+                </div>
                 <form onSubmit={handleSubmit} className="relative">
                     <div className="relative flex items-end border border-gray-300 bg-white rounded-xl shadow-sm focus-within:ring-1 focus-within:ring-primary-light focus-within:border-primary-light overflow-hidden transition-all duration-200">
                         <textarea

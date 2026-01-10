@@ -3,6 +3,8 @@ import cors from 'cors';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { z } from 'zod';
+import { spawn } from 'child_process';
+import path from 'path';
 
 const app = express();
 app.use(cors());
@@ -19,10 +21,11 @@ mcpServer.tool(
     "process_prompt",
     { prompt: z.string() },
     async ({ prompt }) => {
-        // CRITICAL: Log the prompt as requested
         console.log(`[MCP Server] Received prompt: ${prompt}`);
 
         try {
+            // Call the persistent Python Interaction Server (FastAPI)
+            // This avoids reloading the heavy SLM model for every request
             const response = await fetch('http://localhost:3003/filter', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -32,7 +35,12 @@ mcpServer.tool(
             if (!response.ok) {
                 const errorText = await response.text();
                 console.error(`Filter engine returned error: ${response.status} - ${errorText}`);
-                throw new Error(`Filter engine failed: ${response.status}`);
+                return {
+                    content: [{
+                        type: "text",
+                        text: `Filter engine functionality unavailable (Error ${response.status}). Please ensure the PFE service is running.`
+                    }]
+                };
             }
 
             const data = await response.json();
@@ -41,18 +49,31 @@ mcpServer.tool(
                 ? JSON.stringify(data.enriched_analysis, null, 2)
                 : "No analysis available";
 
+            const formattedResponse = `User Prompt:
+${prompt}
+
+PII Detection Prompt:
+${data.labeled}
+
+Secured Prompt:
+${data.redacted}
+
+Analysis:
+${analysisSummary}`;
+
             return {
                 content: [{
                     type: "text",
-                    text: `Redacted Text: ${data.redacted}\n\nAnalysis:\n${analysisSummary}`
+                    text: formattedResponse
                 }]
             };
+
         } catch (error) {
             console.error("Error calling filter engine:", error);
             return {
                 content: [{
                     type: "text",
-                    text: `Error processing prompt: ${error.message}\n\n(Original: ${prompt})`
+                    text: `Error connecting to Filter Engine: ${error.message}. Is the python server running on port 3003?`
                 }]
             };
         }
