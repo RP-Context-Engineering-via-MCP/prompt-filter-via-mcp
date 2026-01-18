@@ -1,6 +1,7 @@
 import re
 from datetime import datetime
 from typing import Dict, Any, Optional
+import ipaddress
 from .patterns import EMAIL_PATTERNS, PHONE_PATTERNS, SSN_PATTERNS, DL_PATTERNS
 
 class RuleBasedProcessor:
@@ -22,6 +23,8 @@ class RuleBasedProcessor:
             context.update(self._analyze_email(text))
         elif label == 'phone number':
             context.update(self._analyze_phone(text))
+        elif label == 'ip address':
+            context.update(self._analyze_ip(text))
         elif label == 'ssn':
             context.update(self._analyze_ssn(text))
         elif label == 'driver license':
@@ -103,12 +106,36 @@ class RuleBasedProcessor:
                 'carrier_type': 'unknown',
                 'confidence': 0.9
             }
+        elif len(clean) >= 10:  # Fallback: simple length check for Intl
+            return {
+                'region': 'international',
+                'carrier_type': 'unknown',
+                'confidence': 0.6
+            }
         else:
             return {
                 'region': 'unknown',
                 'carrier_type': 'unknown',
                 'confidence': 0.0
             }
+
+    def _analyze_ip(self, text: str) -> Dict:
+        """IP → Version, Type"""
+        try:
+            # removing any potential port number
+            if ':' in text and not '[' in text: # simple check for ipv4:port
+                 parts = text.split(':')
+                 if len(parts) == 2 and parts[1].isdigit():
+                     text = parts[0]
+
+            ip = ipaddress.ip_address(text.strip())
+            return {
+                'version': f"IPv{ip.version}",
+                'type': 'private' if ip.is_private else 'public',
+                'confidence': 1.0
+            }
+        except ValueError:
+             return {'version': 'unknown', 'confidence': 0.0}
     
     def _analyze_ssn(self, text: str) -> Dict:
         """SSN → Issuing Country"""
