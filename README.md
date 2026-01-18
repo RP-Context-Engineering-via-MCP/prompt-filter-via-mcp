@@ -13,7 +13,7 @@ An advanced privacy-focused system designed to detect and redact Personally Iden
 ## Technology Stack
 
 ### Frontend
--   **React 18**: For a dynamic and responsive user interface.
+-   **React**: For a dynamic and responsive user interface.
 -   **Vite**: Next-generation frontend tooling for fast builds and development.
 -   **Tailwind CSS**: Utility-first CSS framework for rapid and modern UI styling.
 

@@ -28,7 +28,7 @@ class EntityValueGenerator:
         elif "address" in entity_type:
             # Check context for region
             region_context = "SL"
-            if context.get("region") == "INTL":
+            if context.get("region") in ["INTL", "international"]:
                 region_context = "INTL"
             return self._generate_address(original_text, region_context)
             
