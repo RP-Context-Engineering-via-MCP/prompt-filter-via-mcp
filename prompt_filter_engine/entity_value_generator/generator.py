@@ -197,6 +197,10 @@ class EntityValueGenerator:
 
     def _generate_medical_condition(self, original_text: str, context: dict) -> str:
         """Generate synthetic replacement for a medical condition."""
+        drug_class = context.get("drug_class")
+        if drug_class:
+            return drug_class
+
         tier             = context.get("effective_tier") or context.get("tier")
         therapeutic_area = context.get("therapeutic_area")
 
@@ -217,8 +221,11 @@ class EntityValueGenerator:
 
     def _generate_medication(self, original_text: str, context: dict) -> str:
         """Generate synthetic replacement for a medication."""
-        tier             = context.get("effective_tier") or context.get("tier")
         drug_class       = context.get("drug_class")
+        if drug_class:
+            return drug_class
+
+        tier             = context.get("effective_tier") or context.get("tier")
         therapeutic_area = context.get("therapeutic_area")
 
         # Tier 3 → keep original
@@ -228,10 +235,6 @@ class EntityValueGenerator:
         # Null tier → false positive, keep original
         if tier is None:
             return original_text
-
-        # Lookup by drug_class (most specific)
-        if drug_class and drug_class in self._MEDICATION_TEMPLATES:
-            return self._MEDICATION_TEMPLATES[drug_class]
 
         # Fallback to therapeutic_area-based label
         if therapeutic_area:
