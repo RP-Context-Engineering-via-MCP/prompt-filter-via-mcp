@@ -43,7 +43,13 @@ class EntityValueGenerator:
             
         elif "age" in entity_type:
             return self._generate_age(original_text)
-            
+
+        elif entity_type == "medical_condition":
+            return self._generate_medical_condition(original_text, context)
+
+        elif entity_type == "medication_name":
+            return self._generate_medication(original_text, context)
+
         else:
             # Fallback: simple masking if no generator exists
             return f"[ANONYMIZED_{entity_type.upper()}]"
@@ -135,3 +141,107 @@ class EntityValueGenerator:
             
         except:
             return "30"
+
+    # ------------------------------------------------------------------
+    # Health PHI generators — deterministic template lookup
+    # Tier definitions:
+    #   1 = Critical (mental health, substance use, sexual health)
+    #   2 = High     (metabolic, cardiovascular, oncology, etc.)
+    #   3 = Standard OTC → keep original text (non-sensitive)
+    #   null → GLiNER false positive, caller already dropped entity;
+    #           this method is never called for null, but returns original
+    #           as a safety net
+    # ------------------------------------------------------------------
+
+    # Tier 1 & 2 condition templates (keyed by therapeutic_area)
+    _CONDITION_TEMPLATES = {
+        # Tier 1
+        "mental_health":    "mental health condition",
+        "substance_use":    "substance use condition",
+        "sexual_health":    "confidential health condition",
+        # Tier 2
+        "metabolic":        "metabolic condition",
+        "cardiovascular":   "cardiovascular condition",
+        "respiratory":      "respiratory condition",
+        "oncology":         "chronic health condition",
+        "renal":            "chronic health condition",
+        "autoimmune":       "chronic health condition",
+        "neurological":     "neurological condition",
+    }
+
+    # Tier 1 & 2 medication templates (keyed by drug_class)
+    _MEDICATION_TEMPLATES = {
+        # Tier 1
+        "antidepressant":       "antidepressant medication",
+        "antipsychotic":        "antipsychotic medication",
+        "mood_stabilizer":      "mood stabilizer medication",
+        "anxiolytic":           "anxiety medication",
+        "opioid_replacement":   "opioid replacement therapy",
+        # Tier 2
+        "antidiabetic":         "diabetes medication",
+        "antihypertensive":     "blood pressure medication",
+        "statin":               "cholesterol medication",
+        "bronchodilator":       "respiratory medication",
+        "inhalant":             "respiratory medication",
+        "antihistamine":        "antihistamine medication",
+        "NSAID":                "pain relief medication",
+    }
+
+    # Therapeutic area → Tier mapping (for condition fallback)
+    _TIER_MAP = {
+        "mental_health": 1, "substance_use": 1, "sexual_health": 1,
+        "metabolic": 2, "cardiovascular": 2, "respiratory": 2,
+        "oncology": 2, "renal": 2, "autoimmune": 2, "neurological": 2,
+        "common_acute": 3,
+    }
+
+    def _generate_medical_condition(self, original_text: str, context: dict) -> str:
+        """Generate synthetic replacement for a medical condition."""
+        tier             = context.get("effective_tier") or context.get("tier")
+        therapeutic_area = context.get("therapeutic_area")
+
+        # Tier 3 (OTC / non-sensitive) → keep original
+        if tier == 3 or therapeutic_area == "common_acute":
+            return original_text
+
+        # Null tier → false positive, keep original (safety net)
+        if tier is None:
+            return original_text
+
+        # Lookup by therapeutic_area
+        if therapeutic_area and therapeutic_area in self._CONDITION_TEMPLATES:
+            return self._CONDITION_TEMPLATES[therapeutic_area]
+
+        # Generic fallback by tier
+        return "health condition" if tier == 2 else "health condition"
+
+    def _generate_medication(self, original_text: str, context: dict) -> str:
+        """Generate synthetic replacement for a medication."""
+        tier             = context.get("effective_tier") or context.get("tier")
+        drug_class       = context.get("drug_class")
+        therapeutic_area = context.get("therapeutic_area")
+
+        # Tier 3 → keep original
+        if tier == 3 or therapeutic_area == "common_acute":
+            return original_text
+
+        # Null tier → false positive, keep original
+        if tier is None:
+            return original_text
+
+        # Lookup by drug_class (most specific)
+        if drug_class and drug_class in self._MEDICATION_TEMPLATES:
+            return self._MEDICATION_TEMPLATES[drug_class]
+
+        # Fallback to therapeutic_area-based label
+        if therapeutic_area:
+            ta_labels = {
+                "mental_health": "mental health medication",
+                "metabolic":     "metabolic medication",
+                "cardiovascular": "cardiovascular medication",
+                "respiratory":   "respiratory medication",
+            }
+            if therapeutic_area in ta_labels:
+                return ta_labels[therapeutic_area]
+
+        return "medication"
