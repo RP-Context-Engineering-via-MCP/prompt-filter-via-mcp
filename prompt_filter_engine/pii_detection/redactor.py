@@ -1,6 +1,9 @@
 from gliner import GLiNER
 from prompt_filter_engine.context_identification_pipeline.pipeline import ContextPipeline
 from prompt_filter_engine.entity_value_generator.generator import EntityValueGenerator
+from prompt_filter_engine.slm_entity_generator.health_inference import HealthEntityClassifier
+from prompt_filter_engine.health_phi.phi_resolver import PHIResolver
+from prompt_filter_engine.context_identification_pipeline.rule_based.logic import set_health_classifier
 
 class UniversalRedactor:
     def __init__(self):
@@ -8,17 +11,24 @@ class UniversalRedactor:
         self.model = GLiNER.from_pretrained("urchade/gliner_medium-v2.1")
         self.context_enricher = ContextPipeline()
         self.value_generator = EntityValueGenerator()
-        
+
+        # Health PHI components
+        self.health_classifier = HealthEntityClassifier()
+        self.phi_resolver = PHIResolver()
+        # Wire classifier into rule_based processor (avoids circular imports)
+        set_health_classifier(self.health_classifier)
+
         # Group 1: Identity & PII (User Specified 10 types)
         self.batch_pii = [
-            "name", "age", "phone number", "email", 
-            "bank account number", "driver license", "address", 
+            "name", "age", "phone number", "email",
+            "bank account number", "driver license", "address",
             "ip address", "api key", "credit card number",
             # Added for better address granularity, will be merged into 'address'
             "city", "country"
         ]
-        
-        # Removed Health & Lifestyle groups as per requirements
+
+        # Group 2: Health PHI — 2 labels only, clean slate
+        self.batch_health = ["medical condition", "medication name"]
 
     def merge_address_entities(self, text, entities):
         """
@@ -77,19 +87,55 @@ class UniversalRedactor:
 
     def redact(self, text, return_enriched=False):
         all_entities = []
-        
-        # --- PASS 1: Detect PII ---
+
+        # --- PASS 1: Detect PII (unchanged) ---
         entities_pii = self.model.predict_entities(text, self.batch_pii, threshold=0.3)
-        
+
         # Merge address fragments before adding to all_entities
         entities_pii = self.merge_address_entities(text, entities_pii)
-        
+
         all_entities.extend(entities_pii)
-         
-        # Removed PASS 2 & 3 (Health/Lifestyle) prediction steps
+
+        # --- PASS 2: Detect Health PHI (medical_condition + medication_name only) ---
+        entities_health = self.model.predict_entities(text, self.batch_health, threshold=0.35)
+
+        # Normalise GLiNER label strings to canonical names
+        for e in entities_health:
+            if e['label'] == 'medical condition':
+                e['label'] = 'medical_condition'
+            elif e['label'] == 'medication name':
+                e['label'] = 'medication_name'
+
+        # Attach ±30-token context window to each health entity for the SLM
+        for e in entities_health:
+            words_before = text[:e['start']].split()[-30:]
+            words_after  = text[e['end']:].split()[:30]
+            e['_window'] = ' '.join(words_before + words_after)
+
+        all_entities.extend(entities_health)
         
         # --- CONTEXT ENRICHMENT ---
         enriched_entities = self.context_enricher.enrich_entities(text, all_entities)
+
+        # --- HEALTH NULL-TIER FILTER ---
+        # Drop health entities where SLM returned tier=null (GLiNER false positives)
+        enriched_entities = [
+            e for e in enriched_entities
+            if not (
+                e['label'] in ('medical_condition', 'medication_name')
+                and e.get('context', {}).get('tier') is None
+                and e.get('context', {}).get('confidence', 1.0) > 0.0
+            )
+        ]
+
+        # --- HEALTH PHI RESOLVER: pair condition ↔ medication ---
+        enriched_entities = self.phi_resolver.resolve(enriched_entities)
+
+        # Propagate effective_tier into context for generator
+        for e in enriched_entities:
+            if e['label'] in ('medical_condition', 'medication_name'):
+                ctx = e.setdefault('context', {})
+                ctx['effective_tier'] = e.get('effective_tier', ctx.get('tier'))
         
         # --- MERGE & CLEANUP ---
         # Filter out self-referencing labels (e.g., text "my age" for label "age")

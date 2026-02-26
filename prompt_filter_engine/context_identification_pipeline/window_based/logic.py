@@ -15,6 +15,7 @@ class WindowBasedProcessor:
         self.financial_keywords = FINANCIAL_KEYWORDS
         self.date_type_keywords = DATE_TYPE_KEYWORDS
 
+# ResearchMe: To identify the theoritical way to exmplain why 50 words is good or use another
     def extract_window(self, text: str, start: int, end: int, words: int = 50) -> str:
         """Extract ±N words around entity"""
         # Find word boundaries
@@ -35,7 +36,9 @@ class WindowBasedProcessor:
             context.update(self._match_financial(window_text))
         elif label == 'date':
             context.update(self._match_date_type(window_text))
-            
+        elif label in ('medical_condition', 'medication_name'):
+            context.update(self._match_health(label, window_text))
+
         return context
     
     def _match_employment(self, window: str) -> Dict:
@@ -84,3 +87,25 @@ class WindowBasedProcessor:
                     'confidence_date_type': 0.8
                 }
         return {}
+
+    def _match_health(self, label: str, window: str) -> dict:
+        """Confirm health entity type using surrounding keyword signals."""
+        CONDITION_TRIGGERS  = [
+            'diagnosed with', 'suffering from', 'has been', 'condition',
+            'disorder', 'disease', 'illness', 'syndrome', 'history of',
+        ]
+        MEDICATION_TRIGGERS = [
+            'prescribed', 'taking', 'dose of', 'treatment with',
+            'medication', 'tablet', 'mg', 'drug', 'therapy',
+        ]
+
+        triggers = CONDITION_TRIGGERS if label == 'medical_condition' else MEDICATION_TRIGGERS
+        matched  = [kw for kw in triggers if kw in window]
+
+        if matched:
+            return {
+                'health_context_confirmed': True,
+                'matched_keywords': matched,
+                'confidence_health': 0.85,
+            }
+        return {'health_context_confirmed': False, 'confidence_health': 0.5}
