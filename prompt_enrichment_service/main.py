@@ -10,9 +10,8 @@ load_dotenv()
 
 app = FastAPI(title="Prompt Enrichment Service", version="1.0.0")
 
-# Initialize OpenAI client
-# Ensure OPENAI_API_KEY is set in your environment variables
-client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+# Mock OpenAI client
+# client = AsyncOpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
 class EnrichRequest(BaseModel):
     prompt: str
@@ -77,19 +76,16 @@ async def enrich_prompt(request: EnrichRequest):
         f"Based on the context information provided above, please respond to the user prompt."
     )
 
-    # Query LLM (ChatGPT)
+    # Query LLM (ChatGPT) - Mocked
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini", # You can adjust the model if necessary
-            messages=[
-                {"role": "system", "content": "You are a helpful AI assistant that uses user context to provide highly tailored answers."},
-                {"role": "user", "content": merged_prompt}
-            ],
-            temperature=0.7,
-            max_tokens=1000
-        )
+        # Simulate network delay for LLM
+        await asyncio.sleep(1.0)
         
-        llm_answer = response.choices[0].message.content
+        # Mock LLM Response
+        llm_answer = (
+            f"This is a mock response from the LLM based on the user's prompt: '{original_prompt}'. "
+            f"I have considered your profile ({profile_ctx}), your behavior ({behavior_ctx}), and your core behavior ({core_behavior_ctx})."
+        )
         
         return EnrichResponse(
             enriched_prompt=merged_prompt,
