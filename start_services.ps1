@@ -9,11 +9,23 @@ Write-Host "Launching Prompt Filter Engine (Port 3003)..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
     Write-Host '--- PROMPT FILTER ENGINE (PFE) ---' -ForegroundColor Yellow;
     cd '$root\prompt_filter_engine';
-    $env:PYTHONPATH='$root';
+    `$env:PYTHONPATH='$root';
     python server.py;
 }"
 
 # Wait a few seconds for Python to start initializing (optional but helpful)
+Start-Sleep -Seconds 2
+
+# 1.5 Start Prompt Enrichment Service (Python/FastAPI)
+# Listens on port 3004
+Write-Host "Launching Prompt Enrichment Service (Port 3004)..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
+    Write-Host '--- PROMPT ENRICHMENT SERVICE ---' -ForegroundColor Yellow;
+    cd '$root\prompt_enrichment_service';
+    `$env:PYTHONPATH='$root';
+    python -m uvicorn main:app --port 3004 --reload;
+}"
+
 Start-Sleep -Seconds 2
 
 # 2. Start MCP Server (Node.js)
