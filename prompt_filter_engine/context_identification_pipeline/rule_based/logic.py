@@ -4,6 +4,15 @@ from typing import Dict, Any, Optional
 import ipaddress
 from .patterns import EMAIL_PATTERNS, PHONE_PATTERNS, SSN_PATTERNS, DL_PATTERNS
 
+# Health classifier is injected by UniversalRedactor to avoid circular imports
+_health_classifier = None
+
+
+def set_health_classifier(classifier) -> None:
+    """Called once by UniversalRedactor after both objects are created."""
+    global _health_classifier
+    _health_classifier = classifier
+
 class RuleBasedProcessor:
     def __init__(self):
         self.email_patterns = EMAIL_PATTERNS
@@ -37,7 +46,11 @@ class RuleBasedProcessor:
             context.update(self._analyze_gender(text))
         elif label == 'ethnicity':
             context.update(self._analyze_ethnicity(text))
-            
+        elif label == 'medical_condition':
+            context.update(self._analyze_medical_condition(entity))
+        elif label == 'medication_name':
+            context.update(self._analyze_medication(entity))
+
         return context
     
     def _analyze_age(self, text: str) -> Dict:
@@ -227,3 +240,27 @@ class RuleBasedProcessor:
             return {'ethnic_group': 'burgher', 'region_context': 'sri_lanka', 'confidence': 1.0}
         else:
             return {'ethnic_group': 'other', 'region_context': 'unknown', 'confidence': 0.3}
+
+    def _analyze_medical_condition(self, entity: Dict) -> Dict:
+        """Classify medical condition via Health SLM → tier, therapeutic_area."""
+        if _health_classifier is None:
+            return {'tier': 1, 'therapeutic_area': None, 'drug_class': None, 'confidence': 0.0}
+        context_window = entity.get('_window', entity['text'])
+        result = _health_classifier.classify(
+            entity_text=entity['text'],
+            entity_label='medical_condition',
+            context_window=context_window,
+        )
+        return result
+
+    def _analyze_medication(self, entity: Dict) -> Dict:
+        """Classify medication via Health SLM → tier, therapeutic_area, drug_class."""
+        if _health_classifier is None:
+            return {'tier': 1, 'therapeutic_area': None, 'drug_class': None, 'confidence': 0.0}
+        context_window = entity.get('_window', entity['text'])
+        result = _health_classifier.classify(
+            entity_text=entity['text'],
+            entity_label='medication_name',
+            context_window=context_window,
+        )
+        return result

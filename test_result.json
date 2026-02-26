@@ -1,0 +1,187 @@
+{
+  "original_text": "I would like to update my profile with the following information: My name is Michael Thompson, I am 42 years old, and my phone number is +1 (415) 555-7823. My email address is michael.thompson82@examplemail.com . My bank account number is 021345678912 and my credit card number is 4539 1488 0343 6467. My driver license number is D4598732 issued in California. I currently live at 742 Evergreen Terrace in San Francisco, United States. My IP address is 192.168.14.27 and my API key is sk_test_51N8kLmP9qR2xYzABCD1234XYZ. For medical records, I have been diagnosed with Type 2 Diabetes and I am currently taking Metformin. Please update and securely store all of this information in the system.",
+  "redacted_text": "I would like to update my profile with the following information: My name is [ANONYMIZED_NAME], I am 55, and my phone number is +94705313027. My email address is [ANONYMIZED_EMAIL] . My bank account number is [ANONYMIZED_CREDIT CARD NUMBER] and my credit card number is [ANONYMIZED_CREDIT CARD NUMBER]. [ANONYMIZED_CREDIT CARD NUMBER] is [ANONYMIZED_DRIVER LICENSE] issued in [ANONYMIZED_CITY]. I currently live at 108/3F Parkview Road, Chennai. My IP address is 212.65.52.38 and my API key is [ANONYMIZED_API KEY]. For medical records, I have been diagnosed with antidiabetic drugs and I am currently taking Antidiabetic Medication. Please update and securely store all of this information in the system.",
+  "labeled_text": "I would like to update my profile with the following information: My name is [NAME], I am [AGE], and my phone number is [PHONE NUMBER]. My email address is [EMAIL] . My bank account number is [CREDIT CARD NUMBER] and my credit card number is [CREDIT CARD NUMBER]. [CREDIT CARD NUMBER] is [DRIVER LICENSE] issued in [CITY]. I currently live at [ADDRESS]. My IP address is [IP ADDRESS] and my API key is [API KEY]. For medical records, I have been diagnosed with [MEDICAL_CONDITION] and I am currently taking [MEDICATION_NAME]. Please update and securely store all of this information in the system.",
+  "audit_log": [
+    "Replaced 'Metformin' with 'Antidiabetic Medication' | Type: medication_name | Context: {'health_context_confirmed': True, 'matched_keywords': ['taking'], 'confidence_health': 0.85, 'tier': 3, 'therapeutic_area': 'Diabetes', 'drug_class': 'Antidiabetic Medication', 'confidence': 0.9, 'effective_tier': 3}",
+    "Replaced 'Type 2 Diabetes' with 'antidiabetic drugs' | Type: medical_condition | Context: {'health_context_confirmed': True, 'matched_keywords': ['diagnosed with'], 'confidence_health': 0.85, 'tier': 3, 'therapeutic_area': 'diabetes', 'drug_class': 'antidiabetic drugs', 'confidence': 0.9, 'effective_tier': 3}",
+    "Replaced 'sk_test_51N8kLmP9qR2xYzABCD1234XYZ' with '[ANONYMIZED_API KEY]' | Type: api key",
+    "Replaced '192.168.14.27' with '212.65.52.38' | Type: ip address | Context: {'version': 'IPv4', 'type': 'private', 'confidence': 1.0}",
+    "Replaced '742 Evergreen Terrace in San Francisco, United States' with '108/3F Parkview Road, Chennai' | Type: address",
+    "Replaced 'California' with '[ANONYMIZED_CITY]' | Type: city",
+    "Replaced 'D4598732' with '[ANONYMIZED_DRIVER LICENSE]' | Type: driver license | Context: {'issuing_region': 'sri_lanka', 'format_type': 'old_sl', 'confidence': 1.0}",
+    "Replaced 'My driver license number' with '[ANONYMIZED_CREDIT CARD NUMBER]' | Type: credit card number",
+    "Replaced '4539 1488 0343 6467' with '[ANONYMIZED_CREDIT CARD NUMBER]' | Type: credit card number",
+    "Replaced '021345678912' with '[ANONYMIZED_CREDIT CARD NUMBER]' | Type: credit card number",
+    "Replaced 'michael.thompson82@examplemail.com' with '[ANONYMIZED_EMAIL]' | Type: email | Context: {'domain_type': 'personal/work', 'confidence_domain': 0.7, 'region': 'international', 'confidence_region': 0.8}",
+    "Replaced '+1 (415) 555-7823' with '+94705313027' | Type: phone number | Context: {'region': 'international', 'carrier_type': 'unknown', 'confidence': 0.9}",
+    "Replaced '42 years old' with '55' | Type: age | Context: {'life_stage': 'adult', 'confidence': 1.0}",
+    "Replaced 'Michael Thompson' with '[ANONYMIZED_NAME]' | Type: name | Context: {'gender': 'unknown', 'cultural_origin': 'sri_lanka', 'confidence': 0.5}"
+  ],
+  "entities": [
+    {
+      "start": 611,
+      "end": 620,
+      "text": "Metformin",
+      "label": "medication_name",
+      "score": 0.8869724869728088,
+      "_window": "Francisco, United States. My IP address is 192.168.14.27 and my API key is sk_test_51N8kLmP9qR2xYzABCD1234XYZ. For medical records, I have been diagnosed with Type 2 Diabetes and I am currently taking . Please update and securely store all of this information in the system.",
+      "context": {
+        "health_context_confirmed": true,
+        "matched_keywords": [
+          "taking"
+        ],
+        "confidence_health": 0.85,
+        "tier": 3,
+        "therapeutic_area": "Diabetes",
+        "drug_class": "Antidiabetic Medication",
+        "confidence": 0.9,
+        "effective_tier": 3
+      },
+      "paired": false,
+      "effective_tier": 3
+    },
+    {
+      "start": 569,
+      "end": 584,
+      "text": "Type 2 Diabetes",
+      "label": "medical_condition",
+      "score": 0.9636383652687073,
+      "_window": "currently live at 742 Evergreen Terrace in San Francisco, United States. My IP address is 192.168.14.27 and my API key is sk_test_51N8kLmP9qR2xYzABCD1234XYZ. For medical records, I have been diagnosed with and I am currently taking Metformin. Please update and securely store all of this information in the system.",
+      "context": {
+        "health_context_confirmed": true,
+        "matched_keywords": [
+          "diagnosed with"
+        ],
+        "confidence_health": 0.85,
+        "tier": 3,
+        "therapeutic_area": "diabetes",
+        "drug_class": "antidiabetic drugs",
+        "confidence": 0.9,
+        "effective_tier": 3
+      },
+      "paired": false,
+      "effective_tier": 3
+    },
+    {
+      "start": 485,
+      "end": 519,
+      "text": "sk_test_51N8kLmP9qR2xYzABCD1234XYZ",
+      "label": "api key",
+      "score": 0.9186919331550598,
+      "context": {}
+    },
+    {
+      "start": 453,
+      "end": 466,
+      "text": "192.168.14.27",
+      "label": "ip address",
+      "score": 0.9344893097877502,
+      "context": {
+        "version": "IPv4",
+        "type": "private",
+        "confidence": 1.0
+      }
+    },
+    {
+      "start": 381,
+      "end": 434,
+      "text": "742 Evergreen Terrace in San Francisco, United States",
+      "label": "address",
+      "score": 0.985000729560852,
+      "context": {}
+    },
+    {
+      "start": 349,
+      "end": 359,
+      "text": "California",
+      "label": "city",
+      "score": 0.7974575161933899,
+      "context": {}
+    },
+    {
+      "start": 330,
+      "end": 338,
+      "text": "D4598732",
+      "label": "driver license",
+      "score": 0.7685245275497437,
+      "context": {
+        "issuing_region": "sri_lanka",
+        "format_type": "old_sl",
+        "confidence": 1.0
+      }
+    },
+    {
+      "start": 302,
+      "end": 326,
+      "text": "My driver license number",
+      "label": "credit card number",
+      "score": 0.37652018666267395,
+      "context": {}
+    },
+    {
+      "start": 281,
+      "end": 300,
+      "text": "4539 1488 0343 6467",
+      "label": "credit card number",
+      "score": 0.8575979471206665,
+      "context": {}
+    },
+    {
+      "start": 239,
+      "end": 251,
+      "text": "021345678912",
+      "label": "credit card number",
+      "score": 0.5052615404129028,
+      "context": {}
+    },
+    {
+      "start": 176,
+      "end": 210,
+      "text": "michael.thompson82@examplemail.com",
+      "label": "email",
+      "score": 0.7047003507614136,
+      "context": {
+        "domain_type": "personal/work",
+        "confidence_domain": 0.7,
+        "region": "international",
+        "confidence_region": 0.8
+      }
+    },
+    {
+      "start": 137,
+      "end": 154,
+      "text": "+1 (415) 555-7823",
+      "label": "phone number",
+      "score": 0.6792334914207458,
+      "context": {
+        "region": "international",
+        "carrier_type": "unknown",
+        "confidence": 0.9
+      }
+    },
+    {
+      "start": 100,
+      "end": 112,
+      "text": "42 years old",
+      "label": "age",
+      "score": 0.9316813349723816,
+      "context": {
+        "life_stage": "adult",
+        "confidence": 1.0
+      }
+    },
+    {
+      "start": 77,
+      "end": 93,
+      "text": "Michael Thompson",
+      "label": "name",
+      "score": 0.9821402430534363,
+      "context": {
+        "gender": "unknown",
+        "cultural_origin": "sri_lanka",
+        "confidence": 0.5
+      }
+    }
+  ]
+}
