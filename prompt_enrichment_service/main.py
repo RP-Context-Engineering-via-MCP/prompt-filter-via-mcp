@@ -83,9 +83,10 @@ async def enrich_prompt(request: EnrichRequest):
         
         # Mock LLM Response
         llm_answer = (
-            f"This is a mock response from the LLM based on the user's prompt: '{original_prompt}'. "
+            f"This is a mock response from the LLM based on the user's prompt:\n{original_prompt}\n"
             f"I have considered your profile ({profile_ctx}), your behavior ({behavior_ctx}), and your core behavior ({core_behavior_ctx})."
         )
+
         
         return EnrichResponse(
             enriched_prompt=merged_prompt,
