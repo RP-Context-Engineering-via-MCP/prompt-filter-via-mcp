@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { ChatLog } from '../models/db.js';
+import { checkAndTriggerCondensation, triggerCondensation } from '../services/contextManagerService.js';
 
 const router = Router();
 
@@ -27,6 +28,9 @@ router.post('/', async (req, res) => {
 
         const saved = await chatLog.save();
         res.status(201).json(saved);
+
+        // Check if condensation should be triggered
+        checkAndTriggerCondensation(session_id, user_prompt, llm_response);
     } catch (error) {
         console.error('Error saving chat log:', error);
         res.status(500).json({ error: 'Failed to save chat log' });
@@ -64,6 +68,17 @@ router.get('/:id', async (req, res) => {
     } catch (error) {
         console.error('Error retrieving chat log:', error);
         res.status(500).json({ error: 'Failed to retrieve chat log' });
+    }
+});
+
+// GET /api/chats/test-condense — Retrieve a single chat log by ID
+router.get('/test-condense/:session_id', async (req, res) => {
+    try {
+        await triggerCondensation(req.params.session_id);
+        res.json({ message: 'Triggered condensation for ' + req.params.session_id });
+    } catch (error) {
+        console.error('Error triggering condensation manually:', error);
+        res.status(500).json({ error: 'Failed to trigger condensation manually: ' + error.message });
     }
 });
 

@@ -37,7 +37,18 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
     npm start;
 }"
 
-# 3. Start Web Client (React/Vite)
+# 3. Start Chat Logger Backend (Node.js)
+# Listens on port 3005
+Write-Host "Launching Chat Logger Backend (Port 3005)..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
+    Write-Host '--- CHAT LOGGER BACKEND ---' -ForegroundColor Green;
+    cd '$root\chat-logger-backend';
+    npm start;
+}"
+
+Start-Sleep -Seconds 2
+
+# 4. Start Web Client (React/Vite)
 # Listens on generic dev port (likely 5173)
 Write-Host "Launching Web Client..." -ForegroundColor Cyan
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
