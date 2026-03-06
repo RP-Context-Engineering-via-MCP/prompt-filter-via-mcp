@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 import ipaddress
 from .patterns import EMAIL_PATTERNS, PHONE_PATTERNS, SSN_PATTERNS, DL_PATTERNS
+from .name_classifier import NameContextClassifier
 
 # Health classifier is injected by UniversalRedactor to avoid circular imports
 _health_classifier = None
@@ -19,6 +20,7 @@ class RuleBasedProcessor:
         self.phone_patterns = PHONE_PATTERNS
         self.ssn_patterns = SSN_PATTERNS
         self.dl_patterns = DL_PATTERNS
+        self.name_classifier = NameContextClassifier()
 
     def apply_rules(self, entity: Dict) -> Dict:
         """Apply deterministic rules based on entity type"""
@@ -37,7 +39,7 @@ class RuleBasedProcessor:
         elif label == 'ssn':
             context.update(self._analyze_ssn(text))
         elif label == 'driver license':
-            context.update(self._analyze_driver_license(text))
+            context.update(self._analyze_driver_license(entity))
         elif label == 'date':
             context.update(self._analyze_date(text))
         elif label == 'name':
@@ -133,7 +135,7 @@ class RuleBasedProcessor:
             }
 
     def _analyze_ip(self, text: str) -> Dict:
-        """IP → Version, Type"""
+        """IP → Version, Type, and Class (for Private IPv4)"""
         try:
             # removing any potential port number
             if ':' in text and not '[' in text: # simple check for ipv4:port
@@ -142,11 +144,28 @@ class RuleBasedProcessor:
                      text = parts[0]
 
             ip = ipaddress.ip_address(text.strip())
-            return {
+            context = {
                 'version': f"IPv{ip.version}",
                 'type': 'private' if ip.is_private else 'public',
                 'confidence': 1.0
             }
+            
+            # Determine Class for IPv4
+            if ip.version == 4:
+                first_octet = int(str(ip).split('.')[0])
+                if 0 <= first_octet <= 127:
+                    context['class'] = 'A'
+                elif 128 <= first_octet <= 191:
+                    context['class'] = 'B'
+                elif 192 <= first_octet <= 223:
+                    context['class'] = 'C'
+                else:
+                    context['class'] = 'unknown'
+            else:
+                context['class'] = 'unknown'
+                
+            return context
+            
         except ValueError:
              return {'version': 'unknown', 'confidence': 0.0}
     
@@ -157,9 +176,20 @@ class RuleBasedProcessor:
         else:
             return {'issuing_country': 'unknown', 'confidence': 0.5}
     
-    def _analyze_driver_license(self, text: str) -> Dict:
+    def _analyze_driver_license(self, entity: Dict) -> Dict:
         """Driver License → Issuing Region, Format"""
+        text = entity['text']
         clean = text.strip().upper()
+        
+        window = entity.get('_window', text)
+        international_indicators = r'\b(us|usa|united states|uk|united kingdom|au|australia|international|foreign|indian|european)\b'
+        
+        if re.search(international_indicators, window, re.IGNORECASE):
+            return {
+                'issuing_region': 'international',
+                'format_type': 'international',
+                'confidence': 0.9
+            }
         
         if re.match(self.dl_patterns['sl_new'], clean):
             return {
@@ -209,11 +239,12 @@ class RuleBasedProcessor:
             return {'recency': 'unknown', 'confidence': 0.0}
     
     def _analyze_name(self, text: str) -> Dict:
-        """Name → Gender, Origin (temporary solution)"""
+        """Name → Cultural Origin, Gender via NameContextClassifier."""
+        result = self.name_classifier.classify(text)
         return {
-            'gender': 'unknown',
-            'cultural_origin': 'sri_lanka',
-            'confidence': 0.5
+            'cultural_origin': result['cultural_origin'],
+            'gender':          result['gender'],
+            'confidence':      result['confidence'],
         }
     
     def _analyze_gender(self, text: str) -> Dict:
