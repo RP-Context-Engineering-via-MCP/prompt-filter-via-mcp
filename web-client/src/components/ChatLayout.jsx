@@ -20,10 +20,24 @@ const ChatLayout = () => {
 
     // Load history and session context on mount
     useEffect(() => {
-        const savedHistory = sessionStorage.getItem('chatHistory');
-        if (savedHistory) {
-            setChatHistory(JSON.parse(savedHistory));
-        }
+        // TODO: add jwt token support for user authentication
+        const userId = 'testUser';
+
+        const fetchHistory = async () => {
+            try {
+                const response = await fetch(`http://localhost:3005/api/history/${userId}`);
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.success && result.data) {
+                        setChatHistory(result.data);
+                    }
+                }
+            } catch (error) {
+                console.error("Failed to fetch chat history:", error);
+            }
+        };
+
+        fetchHistory();
 
         const savedSession = localStorage.getItem('sessionContext');
         if (savedSession) {
@@ -31,10 +45,8 @@ const ChatLayout = () => {
         }
     }, []);
 
-    // Save history whenever it changes
-    useEffect(() => {
-        sessionStorage.setItem('chatHistory', JSON.stringify(chatHistory));
-    }, [chatHistory]);
+    // Optional: Keep sessionStorage as a fallback backup or remove it entirely.
+    // We will rely on the backend for persistence now.
 
     // Save session context whenever it changes
     useEffect(() => {
@@ -87,13 +99,17 @@ const ChatLayout = () => {
 
         setChatHistory(prev => {
             const existingIndex = prev.findIndex(c => c.id === chatId);
+            let newHistory;
             if (existingIndex >= 0) {
-                const newHistory = [...prev];
+                newHistory = [...prev];
                 newHistory[existingIndex] = { ...newHistory[existingIndex], messages: updatedMessages };
-                return newHistory;
             } else {
-                return [newChatEntry, ...prev];
+                newHistory = [newChatEntry, ...prev];
             }
+
+            // Persist user prompt to backend asynchronously
+            saveChatToBackend(chatId, newHistory.find(c => c.id === chatId));
+            return newHistory;
         });
 
         setIsTyping(true);
@@ -128,6 +144,9 @@ const ChatLayout = () => {
                 if (existingIndex >= 0) {
                     const newHistory = [...prev];
                     newHistory[existingIndex] = { ...newHistory[existingIndex], messages: finalMessages };
+
+                    // Persist AI response to backend asynchronously
+                    saveChatToBackend(chatId, newHistory[existingIndex]);
                     return newHistory;
                 }
                 return prev;
@@ -143,6 +162,21 @@ const ChatLayout = () => {
             setMessages(prev => [...prev, errorResponse]);
         } finally {
             setIsTyping(false);
+        }
+    };
+
+    const saveChatToBackend = async (chatId, chatData) => {
+        const userId = 'testUser'; // Hardcoded user id
+        try {
+            await fetch('http://localhost:3005/api/history', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ userId, chatData })
+            });
+        } catch (error) {
+            console.error("Failed to save chat to backend:", error);
         }
     };
 

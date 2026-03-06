@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { connectDB } from './models/db.js';
 import chatRoutes from './routes/chatRoutes.js';
+import historyRoutes from './routes/historyRoutes.js';
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/chats', chatRoutes);
+app.use('/api/history', historyRoutes);
 
 // Health check
 app.get('/', (req, res) => {
