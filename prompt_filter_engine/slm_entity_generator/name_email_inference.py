@@ -8,27 +8,10 @@ class NameEmailAnonymizer:
         if adapter_path is None:
              adapter_path = r"d:\SLIIIT\Research\Dev\chatApp\traning-dataset\Qwen2.5-0.5B-Name-Address-Finetune"
         
-        print(f"Loading tokenizer from {base_model_id}...")
-        self.tokenizer = AutoTokenizer.from_pretrained(base_model_id)
-        
-        print(f"Loading base model from {base_model_id}...")
-        if torch.cuda.is_available():
-            self.device = "cuda"
-            torch_dtype = torch.float16
-        else:
-            self.device = "cpu"
-            torch_dtype = torch.float32
-        
-        self.base_model = AutoModelForCausalLM.from_pretrained(
-            base_model_id,
-            device_map=None,
-            torch_dtype=torch_dtype,
-        )
-        self.base_model.to(self.device)
-
-        print(f"Loading adapter from {adapter_path}...")
-        self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        self.model.eval()
+        from prompt_filter_engine.slm_entity_generator.shared_slm import SharedSLMManager
+        self.slm_manager = SharedSLMManager()
+        self.slm_manager.load_adapter("name_email_anonymizer", adapter_path)
+        self.tokenizer = self.slm_manager.tokenizer
 
     def predict_name(self, original_name, cultural_origin="SL_SINHALA", gender="unknown"):
         system_prompt = "You are a context-aware name anonymizer. Replace the input name with a structurally identical but fake one. Maintain cultural origin and gender context. Return ONLY the replacement name."
@@ -52,10 +35,11 @@ class NameEmailAnonymizer:
             add_generation_prompt=True
         )
 
-        model_inputs = self.tokenizer([text_input], return_tensors="pt").to(self.model.device)
+        model_inputs = self.tokenizer([text_input], return_tensors="pt").to(self.slm_manager.device)
 
+        self.slm_manager.activate_adapter("name_email_anonymizer")
         with torch.no_grad():
-            generated_ids = self.model.generate(
+            generated_ids = self.slm_manager.model.generate(
                 **model_inputs,
                 max_new_tokens=60,
                 temperature=0.1,
