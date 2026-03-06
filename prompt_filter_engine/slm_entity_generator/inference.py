@@ -9,29 +9,10 @@ class FineTunedAnonymizer:
              # Default to the path found in the user's workspace
              adapter_path = r"d:\SLIIIT\Research\Dev\chatApp\traning-dataset\Qwen2.5-0.5B-Anonymizer-SLM"
         
-        print(f"Loading tokenizer from {base_model_id}...")
-        self.tokenizer = AutoTokenizer.from_pretrained(base_model_id)
-        
-        print(f"Loading base model from {base_model_id}...")
-        # Load in fp16 if cuda is available, else float32 for CPU
-        if torch.cuda.is_available():
-            self.device = "cuda"
-            torch_dtype = torch.float16
-        else:
-            self.device = "cpu"
-            torch_dtype = torch.float32
-        
-        self.base_model = AutoModelForCausalLM.from_pretrained(
-            base_model_id,
-            device_map=None, # Disable auto device map
-            torch_dtype=torch_dtype,
-            # low_cpu_mem_usage=True # Requires accelerate
-        )
-        self.base_model.to(self.device)
-
-        print(f"Loading adapter from {adapter_path}...")
-        self.model = PeftModel.from_pretrained(self.base_model, adapter_path)
-        self.model.eval()
+        from prompt_filter_engine.slm_entity_generator.shared_slm import SharedSLMManager
+        self.slm_manager = SharedSLMManager()
+        self.slm_manager.load_adapter("address_anonymizer", adapter_path)
+        self.tokenizer = self.slm_manager.tokenizer
 
     def predict(self, raw_value, context="SL"):
         prompt = f"Input: {raw_value} [SEP] Context: {context}"
@@ -47,10 +28,11 @@ class FineTunedAnonymizer:
             add_generation_prompt=True
         )
 
-        model_inputs = self.tokenizer([text_input], return_tensors="pt").to(self.model.device)
+        model_inputs = self.tokenizer([text_input], return_tensors="pt").to(self.slm_manager.device)
 
+        self.slm_manager.activate_adapter("address_anonymizer")
         with torch.no_grad():
-            generated_ids = self.model.generate(
+            generated_ids = self.slm_manager.model.generate(
                 **model_inputs,
                 max_new_tokens=60,
                 temperature=0.1,

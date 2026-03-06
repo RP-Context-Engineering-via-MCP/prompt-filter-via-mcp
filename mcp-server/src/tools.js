@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { logChat } from './services/apiService.js';
 
 // Factory function: creates a new McpServer with tools registered per connection
 export function createMcpServer() {
@@ -106,6 +107,55 @@ ${llmAnswer}`;
                     content: [{
                         type: "text",
                         text: `Error processing prompt: ${error.message}. Please check if the services are running.`
+                    }]
+                };
+            }
+        }
+    );
+
+    // Tool to capture and log chat interactions to the backend
+    server.tool(
+        "capture_chat",
+        {
+            user_prompt: z.string().describe("The user's original message"),
+            llm_response: z.string().describe("The LLM's generated response"),
+            session_id: z.string().optional().describe("Session identifier to group conversations"),
+            source: z.string().optional().default("claude_desktop").describe("Source client name"),
+            model: z.string().optional().describe("AI model name if detectable")
+        },
+        async ({ user_prompt, llm_response, session_id, source, model }) => {
+            console.log(`[MCP Server] capture_chat called | session: ${session_id || 'none'} | source: ${source}`);
+
+            try {
+                const result = await logChat({
+                    user_prompt,
+                    llm_response,
+                    session_id,
+                    source,
+                    metadata: { model }
+                });
+
+                if (result.success) {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Chat logged successfully (id: ${result.id})`
+                        }]
+                    };
+                } else {
+                    return {
+                        content: [{
+                            type: "text",
+                            text: `Failed to log chat: ${result.error}`
+                        }]
+                    };
+                }
+            } catch (error) {
+                console.error("Error in capture_chat:", error);
+                return {
+                    content: [{
+                        type: "text",
+                        text: `Error logging chat: ${error.message}`
                     }]
                 };
             }

@@ -1,9 +1,14 @@
+import re
 from gliner import GLiNER
 from prompt_filter_engine.context_identification_pipeline.pipeline import ContextPipeline
 from prompt_filter_engine.entity_value_generator.generator import EntityValueGenerator
 from prompt_filter_engine.slm_entity_generator.health_inference import HealthEntityClassifier
 from prompt_filter_engine.health_phi.phi_resolver import PHIResolver
 from prompt_filter_engine.context_identification_pipeline.rule_based.logic import set_health_classifier
+
+# Pre-compiled patterns used for span correction
+_IPV4_RE = re.compile(r'\b(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\b')
+_IPV6_RE = re.compile(r'\b([0-9a-fA-F]{1,4}(?::[0-9a-fA-F]{0,4}){2,7})\b')
 
 class UniversalRedactor:
     def __init__(self):
@@ -29,6 +34,64 @@ class UniversalRedactor:
 
         # Group 2: Health PHI — 2 labels only, clean slate
         self.batch_health = ["medical condition", "medication name"]
+
+    def _apply_regex_overrides(self, text: str, entities: list) -> list:
+        import re
+        
+        # 1. IP Addresses
+        ip_matches = []
+        for match in _IPV4_RE.finditer(text):
+            ip_matches.append((match.start(), match.end(), match.group(), 'ip address'))
+        for match in _IPV6_RE.finditer(text):
+            ip_matches.append((match.start(), match.end(), match.group(), 'ip address'))
+            
+        # 2. Credit Cards (15 or 16 digits)
+        cc_matches = []
+        cc_re = re.compile(r'\b(?:\d{4}[ -]?){3}\d{3,4}\b|\b\d{15,16}\b')
+        for match in cc_re.finditer(text):
+            val = match.group().replace(' ', '').replace('-', '')
+            if len(val) in (15, 16):
+                cc_matches.append((match.start(), match.end(), match.group(), 'credit card number'))
+                
+        # 3. Driver Licenses (SL)
+        dl_matches = []
+        dl_re = re.compile(r'\b[A-Za-z]{2}\d{8}\b|\b[A-Za-z]\d{7}\b')
+        for match in dl_re.finditer(text):
+            dl_matches.append((match.start(), match.end(), match.group(), 'driver license'))
+            
+        # IBAN format (Bank Account)
+        iban_re = re.compile(r'\b[A-Z]{2}\d{2} ?[A-Z0-9]{4} ?\d{4} ?\d{4} ?\d{4} ?\d{2}\b')
+        for match in iban_re.finditer(text):
+            dl_matches.append((match.start(), match.end(), match.group(), 'bank account number'))
+
+        # Context-based driver license (INTL)
+        dl_context_re = re.compile(r'(?i)(?:DL|driver license|licence)[:\s]+([A-Za-z0-9\-]{5,20})\b')
+        for match in dl_context_re.finditer(text):
+            dl_matches.append((match.start(1), match.end(1), match.group(1), 'driver license'))
+            
+        # Context-based bank account
+        bank_context_re = re.compile(r'(?i)(?:account)\s+(\d{10,12})\b')
+        for match in bank_context_re.finditer(text):
+            dl_matches.append((match.start(1), match.end(1), match.group(1), 'bank account number'))
+
+        all_regex_matches = ip_matches + cc_matches + dl_matches
+        new_entities = list(entities)
+        
+        # Fix mislabeled Bank Accounts
+        for e in new_entities:
+            if e['label'] == 'credit card number':
+                val = e['text'].replace(' ', '').replace('-', '')
+                if len(val) in (10, 12, 14):
+                    e['label'] = 'bank account number'
+                    
+        # Merge regex matches
+        for r_start, r_end, r_text, r_label in all_regex_matches:
+            # Remove any existing entities that overlap with this regex match
+            new_entities = [e for e in new_entities if not (max(e['start'], r_start) < min(e['end'], r_end))]
+            # Add the regex match as a single new entity
+            new_entities.append({'start': r_start, 'end': r_end, 'text': r_text, 'label': r_label, 'score': 1.0})
+                
+        return new_entities
 
     def merge_address_entities(self, text, entities):
         """
@@ -88,8 +151,11 @@ class UniversalRedactor:
     def redact(self, text, return_enriched=False):
         all_entities = []
 
-        # --- PASS 1: Detect PII (unchanged) ---
+        # --- PASS 1: Detect PII ---
         entities_pii = self.model.predict_entities(text, self.batch_pii, threshold=0.3)
+
+        # Apply regex rules to catch missed entities or fix overlapping labels
+        entities_pii = self._apply_regex_overrides(text, entities_pii)
 
         # Merge address fragments before adding to all_entities
         entities_pii = self.merge_address_entities(text, entities_pii)
@@ -156,6 +222,12 @@ class UniversalRedactor:
 
             # Rule 2: Remove common pronouns/terms detected as names
             if label_lower == "name" and text_lower in ignore_terms:
+                continue
+
+            # Rule 3: Drop 'ip address' entities whose text could not be parsed
+            # as a valid IP by the context pipeline (version == 'unknown' means
+            # the model captured a keyword like "my ip" instead of the actual value).
+            if label_lower == "ip address" and e.get("context", {}).get("version") == "unknown":
                 continue
 
             final_entities.append(e)

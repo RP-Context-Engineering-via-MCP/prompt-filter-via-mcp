@@ -34,32 +34,16 @@ class HealthEntityClassifier:
     def __init__(self):
         print("Initializing Health Entity Classifier...")
         try:
-            if torch.cuda.is_available():
-                self.device     = "cuda"
-                torch_dtype     = torch.float16
-            else:
-                self.device     = "cpu"
-                torch_dtype     = torch.float32
-
-            print(f"  Loading tokenizer from {self.BASE_MODEL}...")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.BASE_MODEL)
-
-            print(f"  Loading base model from {self.BASE_MODEL}...")
-            base_model = AutoModelForCausalLM.from_pretrained(
-                self.BASE_MODEL,
-                device_map=None,
-                torch_dtype=torch_dtype,
-            )
-            base_model.to(self.device)
-
-            print(f"  Loading health LoRA adapter from {self.ADAPTER_PATH}...")
-            self.model = PeftModel.from_pretrained(base_model, self.ADAPTER_PATH)
-            self.model.eval()
+            from prompt_filter_engine.slm_entity_generator.shared_slm import SharedSLMManager
+            self.slm_manager = SharedSLMManager()
+            self.slm_manager.load_adapter("health_classifier", self.ADAPTER_PATH)
+            self.tokenizer = self.slm_manager.tokenizer
+            self.device = self.slm_manager.device
             self._available = True
             print("  Health Entity Classifier ready.")
         except Exception as e:
             print(f"  Warning: Could not load Health SLM ({e}). Rule-based fallback will be used.")
-            self.model     = None
+            self.slm_manager = None
             self.tokenizer = None
             self._available = False
 
@@ -99,8 +83,9 @@ class HealthEntityClassifier:
             )
             model_inputs = self.tokenizer([text_input], return_tensors="pt").to(self.device)
 
+            self.slm_manager.activate_adapter("health_classifier")
             with torch.no_grad():
-                generated_ids = self.model.generate(
+                generated_ids = self.slm_manager.model.generate(
                     **model_inputs,
                     max_new_tokens=80,
                     temperature=0.1,
