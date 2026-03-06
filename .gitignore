@@ -81,3 +81,6 @@ test_result.json
 *.pt
 *.safetensors
 *.ckpt
+prompt_filter_engine/pytest_phi.txt
+prompt_filter_engine/pytest_api.txt
+prompt_filter_engine/pytest_red.txt
