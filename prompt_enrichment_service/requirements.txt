@@ -3,3 +3,5 @@ uvicorn
 openai
 pydantic
 python-dotenv
+tiktoken
+redis

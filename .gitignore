@@ -87,3 +87,6 @@ prompt_filter_engine/pytest_red.txt
 .claude/settings.local.json
 
 prompt_filter_engine/tests/test_logs/
+git_log.txt
+push_error.txt
+prompt_filter_engine/tests/test_entity_pipeline.py

@@ -1,12 +1,21 @@
 import os
 import uvicorn
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
 from prompt_filter_engine.pii_detection.redactor import UniversalRedactor
 
 app = FastAPI(title="Prompt Filter Engine API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this in production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Initialize UniversalRedactor
 # We can initialize it globally or lazily. 

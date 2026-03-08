@@ -20,37 +20,11 @@ export function createMcpServer() {
             console.log(`[MCP Server] Received prompt: ${prompt} | Filter Enabled: ${enable_filter}`);
 
             try {
-                let securedPrompt = prompt;
-                let pfeData = null;
-
-                // 1. Process through Prompt Filter Engine if ON
-                if (enable_filter) {
-                    const filterResponse = await fetch('http://localhost:3003/filter', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ prompt })
-                    });
-
-                    if (!filterResponse.ok) {
-                        const errorText = await filterResponse.text();
-                        console.error(`Filter engine returned error: ${filterResponse.status} - ${errorText}`);
-                        return {
-                            content: [{
-                                type: "text",
-                                text: `Filter engine functionality unavailable (Error ${filterResponse.status}). Please ensure the PFE service is running on Port 3003.`
-                            }]
-                        };
-                    }
-
-                    pfeData = await filterResponse.json();
-                    securedPrompt = pfeData.redacted;
-                }
-
-                // 2. Process through Prompt Enrichment Service
+                // 1. Process through Prompt Enrichment Service using the received prompt (which is already secured if filter was enabled)
                 const enrichResponse = await fetch('http://localhost:3004/enrich', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: securedPrompt })
+                    body: JSON.stringify({ prompt: prompt, session_id: "mcp_hardcoded_session" })
                 });
 
                 if (!enrichResponse.ok) {
@@ -59,45 +33,24 @@ export function createMcpServer() {
                     return {
                         content: [{
                             type: "text",
-                            text: `Context Engine functionality unavailable (Error ${enrichResponse.status}). Please ensure the Prompt Enrichment Service is running on Port 3004.`
+                            text: JSON.stringify({ error: `Context Engine functionality unavailable (Error ${enrichResponse.status}). Ensure API Keys are valid and the Service is running.` })
                         }]
                     };
                 }
 
                 const enrichData = await enrichResponse.json();
-                const llmAnswer = enrichData.llm_response;
 
-                // 3. Format final response logic
-                let formattedResponse = "";
-
-                if (enable_filter && pfeData) {
-                    const analysisSummary = pfeData.enriched_analysis
-                        ? JSON.stringify(pfeData.enriched_analysis, null, 2)
-                        : "No analysis available";
-
-                    formattedResponse = `User Prompt:
-${prompt}
-
-PII Detection Prompt:
-${pfeData.labeled}
-
-Secured Prompt:
-${pfeData.redacted}
-
-Analysis:
-${analysisSummary}
-
----
-AI Response:
-${llmAnswer}`;
-                } else {
-                    formattedResponse = `${llmAnswer}`;
-                }
+                // 2. Format final response logic as JSON
+                const responsePayload = {
+                    llm_response: enrichData.llm_response,
+                    turn_index: enrichData.turn_index,
+                    enriched_prompt: enrichData.enriched_prompt
+                };
 
                 return {
                     content: [{
                         type: "text",
-                        text: formattedResponse
+                        text: JSON.stringify(responsePayload)
                     }]
                 };
 
@@ -106,7 +59,7 @@ ${llmAnswer}`;
                 return {
                     content: [{
                         type: "text",
-                        text: `Error processing prompt: ${error.message}. Please check if the services are running.`
+                        text: JSON.stringify({ error: `Error processing prompt: ${error.message}. Please check if the services are running.` })
                     }]
                 };
             }
