@@ -163,7 +163,8 @@ const ChatLayout = () => {
                 name: "process_prompt",
                 arguments: {
                     prompt: finalPromptForMCP,
-                    enable_filter: false // MCP no longer handles filtering
+                    enable_filter: false, // MCP no longer handles filtering
+                    source: "web_client"  // web_client mode: enrichment service calls OpenAI API
                 }
             });
 

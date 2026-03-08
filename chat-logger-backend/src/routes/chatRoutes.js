@@ -13,17 +13,25 @@ router.post('/', async (req, res) => {
 
         if (!selected_session_id) {
             try {
+                console.log(`[chatRoutes DEBUG] Fetching current session for ${effectiveUserId} from http://localhost:8080/api/users/${effectiveUserId}/current-session`);
                 const sessionRes = await fetch(`http://localhost:8080/api/users/${effectiveUserId}/current-session`);
+                console.log(`[chatRoutes DEBUG] Fetch response status: ${sessionRes.status}`);
                 if (sessionRes.ok) {
                     const sessionData = await sessionRes.json();
+                    console.log(`[chatRoutes DEBUG] Fetch response data:`, sessionData);
                     if (sessionData.current_session_id) {
                         selected_session_id = sessionData.current_session_id;
+                        console.log(`[chatRoutes DEBUG] Set selected_session_id to ${selected_session_id}`);
                     }
+                } else {
+                    console.log(`[chatRoutes DEBUG] Fetch not ok. Body:`, await sessionRes.text());
                 }
             } catch (err) {
                 console.error(`[chatRoutes] Failed to fetch current session for user ${effectiveUserId}:`, err.message);
             }
         }
+
+        console.log(`[chatRoutes DEBUG] Final selected_session_id before save:`, selected_session_id);
 
         if (!user_prompt || !llm_response) {
             return res.status(400).json({
@@ -57,18 +65,25 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/chats — Retrieve chat logs with optional filters
+// Supports: session_id, source, user_id, selected_session_id, skip, limit
 router.get('/', async (req, res) => {
     try {
-        const { session_id, source, limit = 50 } = req.query;
+        const { session_id, source, user_id, selected_session_id, skip = 0, limit = 50 } = req.query;
 
         const filter = {};
         if (session_id) filter.session_id = session_id;
         if (source) filter.source = source;
+        if (user_id) filter.user_id = user_id;
+        if (selected_session_id) filter.selected_session_id = selected_session_id;
+
+        console.info(`[INFO] GET /api/chats | Filters: user_id=${user_id || 'N/A'}, selected_session_id=${selected_session_id || 'N/A'}, session_id=${session_id || 'N/A'}, source=${source || 'N/A'}, skip=${skip}, limit=${limit}`);
 
         const chats = await ChatLog.find(filter)
-            .sort({ timestamp: -1 })
+            .sort({ timestamp: 1 })  // chronological order (oldest first) for sync
+            .skip(parseInt(skip))
             .limit(parseInt(limit));
 
+        console.info(`[INFO] GET /api/chats | Found ${chats.length} chat logs matching filters`);
         res.json(chats);
     } catch (error) {
         console.error('Error retrieving chat logs:', error);

@@ -14,18 +14,22 @@ export function createMcpServer() {
         "process_prompt",
         {
             prompt: z.string(),
-            enable_filter: z.boolean().optional().default(true)
+            enable_filter: z.boolean().optional().default(true),
+            source: z.string().optional().default("mcp").describe("Source mode: 'mcp' for LLM web apps, 'web_client' for own platform")
         },
-        async ({ prompt, enable_filter }) => {
-            console.info(`[INFO] MCP Server received 'process_prompt'. Prompt: "${prompt}". Calling Prompt Enrichment Service at http://127.0.0.1:3004/enrich...`);
-            console.log(`[MCP Server] Received prompt: ${prompt} | Filter Enabled: ${enable_filter}`);
+        async ({ prompt, enable_filter, source }) => {
+            // FIXME: user_id is hardcoded — replace with actual user authentication when JWT/auth is implemented
+            const user_id = "5ca4d3ee-a139-44f9-9f9a-84655025a8f2";
+
+            console.info(`[INFO] MCP Server received 'process_prompt'. source=${source} | user_id=${user_id} | prompt="${prompt}". Calling Prompt Enrichment Service...`);
+            console.log(`[MCP Server] process_prompt | source=${source} | Filter Enabled: ${enable_filter}`);
 
             try {
-                // 1. Process through Prompt Enrichment Service using the received prompt (which is already secured if filter was enabled)
+                // 1. Process through Prompt Enrichment Service with source mode
                 const enrichResponse = await fetch('http://127.0.0.1:3004/enrich', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt, user_id: "5ca4d3ee-a139-44f9-9f9a-84655025a8f2" })
+                    body: JSON.stringify({ prompt: prompt, user_id: user_id, source: source })
                 });
 
                 if (!enrichResponse.ok) {
@@ -41,7 +45,20 @@ export function createMcpServer() {
 
                 const enrichData = await enrichResponse.json();
 
-                // 2. Format final response logic as JSON
+                console.info(`[INFO] Enrichment response received | source=${source} | session=${enrichData.session_id} | turn=${enrichData.turn_index} | has_llm_response=${!!enrichData.llm_response}`);
+
+                // 2. Format response based on source mode
+                if (source === "mcp") {
+                    // MCP mode: return enriched prompt (behaviors) — LLM app uses this as context
+                    return {
+                        content: [{
+                            type: "text",
+                            text: enrichData.enriched_prompt
+                        }]
+                    };
+                }
+
+                // web_client mode: return LLM response as JSON
                 const responsePayload = {
                     llm_response: enrichData.llm_response,
                     turn_index: enrichData.turn_index,
@@ -75,11 +92,14 @@ export function createMcpServer() {
             llm_response: z.string().describe("The LLM's generated response"),
             session_id: z.string().optional().describe("Session identifier to group conversations"),
             source: z.string().optional().default("claude_desktop").describe("Source client name"),
-            model: z.string().optional().describe("AI model name if detectable")
+            model: z.string().optional().describe("AI model name if detectable"),
+            // FIXME: user_id is hardcoded — replace with actual user authentication (JWT/session-based)
+            // when auth is implemented. Currently uses a default user ID for development.
+            user_id: z.string().optional().default("5ca4d3ee-a139-44f9-9f9a-84655025a8f2").describe("User ID for associating chat logs")
         },
-        async ({ user_prompt, llm_response, session_id, source, model }) => {
-            console.info(`[INFO] MCP Server received 'capture_chat'. Calling Chat Logger Backend to log chat for session: ${session_id || 'none'}`);
-            console.log(`[MCP Server] capture_chat called | session: ${session_id || 'none'} | source: ${source}`);
+        async ({ user_prompt, llm_response, session_id, source, model, user_id }) => {
+            console.info(`[INFO] MCP Server received 'capture_chat'. user_id=${user_id} | session=${session_id || 'none'} | source=${source}`);
+            console.log(`[MCP Server] capture_chat called | user_id: ${user_id} | session: ${session_id || 'none'} | source: ${source} | prompt_len: ${user_prompt.length} | response_len: ${llm_response.length}`);
 
             try {
                 const result = await logChat({
@@ -87,6 +107,7 @@ export function createMcpServer() {
                     llm_response,
                     session_id,
                     source,
+                    user_id,
                     metadata: { model }
                 });
 

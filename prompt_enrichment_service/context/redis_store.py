@@ -36,7 +36,7 @@ from .session_memory import ChunkSummary, Message, SessionMemory
 logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "atce:session:"
-DEFAULT_TTL  = 86_400   # 24 hours
+DEFAULT_TTL  = 432_000   # 5 days
 
 
 # ---------------------------------------------------------------------------
