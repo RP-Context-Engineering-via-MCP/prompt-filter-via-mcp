@@ -77,65 +77,117 @@ const ChatLayout = () => {
     }, []);
 
     const handleSend = async (text) => {
-        // Add user message
-        const userMsg = { role: 'user', content: text };
-        const updatedMessages = [...messages, userMsg];
-        setMessages(updatedMessages);
+        setIsTyping(true);
 
-        // Update Persistence
+        // Add initial user message
+        const baseUserMsg = { role: 'user', content: text };
+        let currentMessages = [...messages, baseUserMsg];
+        setMessages(currentMessages);
+
+        // Update Persistence (Initial User Prompt)
         let chatId = currentChatId;
         if (!chatId) {
             chatId = Date.now().toString();
             setCurrentChatId(chatId);
         }
 
-        const newChatEntry = {
+        const createChatEntry = (msgList) => ({
             id: chatId,
-            title: messages.length === 0 ? text.slice(0, 30) + (text.length > 30 ? '...' : '') : 'New Chat',
+            title: msgList.length === 1 ? text.slice(0, 30) + (text.length > 30 ? '...' : '') : 'New Chat',
             date: new Date().toISOString(),
-            model: selectedModel || 'chatgpt', // Default fallback
-            messages: updatedMessages
-        };
+            model: selectedModel || 'chatgpt',
+            messages: msgList
+        });
 
+        // Save initial state to history
         setChatHistory(prev => {
             const existingIndex = prev.findIndex(c => c.id === chatId);
             let newHistory;
             if (existingIndex >= 0) {
                 newHistory = [...prev];
-                newHistory[existingIndex] = { ...newHistory[existingIndex], messages: updatedMessages };
+                newHistory[existingIndex] = { ...newHistory[existingIndex], messages: currentMessages };
             } else {
-                newHistory = [newChatEntry, ...prev];
+                newHistory = [createChatEntry(currentMessages), ...prev];
             }
-
-            // Persist user prompt to backend asynchronously
             saveChatToBackend(chatId, newHistory.find(c => c.id === chatId));
             return newHistory;
         });
 
-        setIsTyping(true);
+        let finalPromptForMCP = text;
+        let pfeData = null;
 
         try {
+            // Step 1: Pass through Prompt Filter Engine first (if enabled)
+            if (filterEnabled) {
+                try {
+                    const filterResponse = await fetch('http://localhost:3003/filter', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ prompt: text })
+                    });
+
+                    if (filterResponse.ok) {
+                        pfeData = await filterResponse.json();
+                        finalPromptForMCP = pfeData.redacted;
+
+                        // Instantly update the user message with secured prompt
+                        const securedUserMsg = { ...baseUserMsg, securedPrompt: pfeData.redacted };
+                        currentMessages = [...messages, securedUserMsg];
+                        setMessages(currentMessages);
+
+                        // Save updated user message
+                        setChatHistory(prev => {
+                            const existingIndex = prev.findIndex(c => c.id === chatId);
+                            if (existingIndex >= 0) {
+                                const newHistory = [...prev];
+                                newHistory[existingIndex] = { ...newHistory[existingIndex], messages: currentMessages };
+                                saveChatToBackend(chatId, newHistory[existingIndex]);
+                                return newHistory;
+                            }
+                            return prev;
+                        });
+                    } else {
+                        console.error('PFE error:', await filterResponse.text());
+                    }
+                } catch (pfeErr) {
+                    console.error('Failed to reach PFE:', pfeErr);
+                }
+            }
+
             if (!clientRef.current) {
                 throw new Error("MCP Client not connected");
             }
 
-            // Call the MCP tool
+            // Step 2: Call the MCP tool with the secured Prompt
             const result = await clientRef.current.callTool({
                 name: "process_prompt",
                 arguments: {
-                    prompt: text,
-                    enable_filter: filterEnabled
+                    prompt: finalPromptForMCP,
+                    enable_filter: false // MCP no longer handles filtering
                 }
             });
 
-            // Extract text from result content
-            const responseText = result.content[0].text;
+            const responseTextRaw = result.content[0].text;
+            let displayResponse = responseTextRaw;
+
+            // Step 3: Parse the JSON from MCP
+            try {
+                const parsedResponse = JSON.parse(responseTextRaw);
+                if (parsedResponse.error) {
+                    displayResponse = parsedResponse.error;
+                } else {
+                    displayResponse = parsedResponse.llm_response;
+                }
+            } catch (jsonErr) {
+                // If it fails to parse (e.g., unexpected error string), just show raw
+                console.warn('Failed to parse MCP response as JSON:', jsonErr);
+            }
 
             const aiResponse = {
                 role: 'assistant',
-                content: responseText
+                content: displayResponse
             };
-            const finalMessages = [...updatedMessages, aiResponse];
+            const finalMessages = [...currentMessages, aiResponse];
             setMessages(finalMessages);
 
             // Update Persistence with AI response
@@ -198,7 +250,7 @@ const ChatLayout = () => {
     };
 
     return (
-        <div className="flex h-screen bg-memora-bg font-sans text-black overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
+        <div className="flex h-screen bg-memora-bg font-sans overflow-hidden selection:bg-indigo-100 selection:text-indigo-900">
             <Sidebar
                 chatHistory={chatHistory}
                 currentChatId={currentChatId}
@@ -214,8 +266,8 @@ const ChatLayout = () => {
                 />
 
                 {/* Main Content Area - mimicking "Session Contexts" look but for active chat */}
-                <div className="flex-1 px-8 pb-8 min-h-0">
-                    <div className="h-full bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden relative">
+                <div className="flex-1 px-6 pb-6 min-h-0">
+                    <div className="h-full bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col overflow-hidden">
                         {/* Chat Header inside card if needed, or just cleaner layout */}
 
                         {/* Mobile Header Toggle (simplified) */}
@@ -230,7 +282,7 @@ const ChatLayout = () => {
 
                         <MessageList messages={messages} selectedModel={selectedModel} />
 
-                        <div className="p-4 bg-white border-t border-slate-50">
+                        <div className="bg-white border-t border-slate-100">
                             <ChatInput
                                 onSend={handleSend}
                                 disabled={isTyping}
