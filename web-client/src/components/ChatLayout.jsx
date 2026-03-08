@@ -21,7 +21,7 @@ const ChatLayout = () => {
     // Load history and session context on mount
     useEffect(() => {
         // TODO: add jwt token support for user authentication
-        const userId = 'testUser';
+        const userId = localStorage.getItem('userId') || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
 
         const fetchHistory = async () => {
             try {
@@ -218,7 +218,7 @@ const ChatLayout = () => {
     };
 
     const saveChatToBackend = async (chatId, chatData) => {
-        const userId = 'testUser'; // Hardcoded user id
+        const userId = localStorage.getItem('userId') || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2'; // Hardcoded user id fallback
         try {
             await fetch('http://localhost:3005/api/history', {
                 method: 'POST',

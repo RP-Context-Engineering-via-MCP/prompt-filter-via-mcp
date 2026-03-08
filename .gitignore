@@ -90,3 +90,7 @@ prompt_filter_engine/tests/test_logs/
 git_log.txt
 push_error.txt
 prompt_filter_engine/tests/test_entity_pipeline.py
+
+# Ignore IDE / Tool generated folders
+.claude/
+archiDoc/
