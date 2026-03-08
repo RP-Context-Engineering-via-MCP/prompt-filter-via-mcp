@@ -84,9 +84,6 @@ test_result.json
 prompt_filter_engine/pytest_phi.txt
 prompt_filter_engine/pytest_api.txt
 prompt_filter_engine/pytest_red.txt
-<<<<<<< HEAD
 .claude/settings.local.json
 
 prompt_filter_engine/tests/test_logs/
-=======
->>>>>>> parent of 45cd98a (test case logs)
