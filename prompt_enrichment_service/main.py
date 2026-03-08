@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from openai import AsyncAzureOpenAI
 from pydantic import BaseModel
+import aiohttp
 
 from context import (
     ATCEConfig,
@@ -33,6 +34,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Prompt Enrichment Service", version="2.0.0")
+
+USER_MANAGER_URL = os.environ.get("USER_MANAGER_URL", "http://localhost:8080")
 
 # ---------------------------------------------------------------------------
 # Active conversation store
@@ -107,8 +110,8 @@ atce_cfg = ATCEConfig(
 
 class EnrichRequest(BaseModel):
     prompt: str
-    session_id: str             # Required: identifies the conversation session
-    user_id: str | None = None  # Optional: for future per-user context loading
+    user_id: str                # Required: identifies the user for fetching context
+    session_id: str | None = None  # Optional: identifies the conversation session if known
 
 
 class EnrichResponse(BaseModel):
@@ -119,9 +122,24 @@ class EnrichResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Mock user context APIs
-# (Replace with real service calls when available)
+# Mock user context APIs & External API Calls
 # ---------------------------------------------------------------------------
+
+async def get_current_session_id(user_id: str) -> str:
+    """Fetch the current session ID for the given user from the User Manager."""
+    try:
+        url = f"{USER_MANAGER_URL}/api/users/{user_id}/current-session"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("current_session_id") or "default"
+                else:
+                    logger.warning(f"[UserManager] Failed to get session for user {user_id}: {response.status}")
+                    return "default"
+    except Exception as exc:
+        logger.error(f"[UserManager] Error fetching session for user {user_id}: {exc}")
+        return "default"
 
 async def get_user_behavior_extraction(user_id: str | None = None) -> str:
     await asyncio.sleep(0.05)
@@ -153,18 +171,23 @@ async def _store_and_persist(
     2. Persists the updated session to Redis (if Redis store is active).
     Compression callbacks (persist_fn) handle Tier 2→3 persistence internally.
     """
-    store = active_store or conversation_store
-    await store_turn(
-        session_id=session_id,
-        user_message=user_message,
-        assistant_response=llm_response,
-        cfg=atce_cfg,
-        store=store,
-    )
+    try:
+        store = active_store or conversation_store
+        await store_turn(
+            session_id=session_id,
+            user_message=user_message,
+            assistant_response=llm_response,
+            cfg=atce_cfg,
+            store=store,
+        )
 
-    # Persist current state to Redis after storing the turn
-    if active_store is not None:
-        await active_store.persist(session_id)
+        # Persist current state to Redis after storing the turn
+        if active_store is not None:
+            logger.info("[_store_and_persist] Persisting session=%s to Redis...", session_id)
+            await active_store.persist(session_id)
+            logger.info("[_store_and_persist] Done persisting session=%s", session_id)
+    except Exception as exc:
+        logger.error("[_store_and_persist] ERROR for session=%s: %s", session_id, exc, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -228,17 +251,27 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     """
 
     request_start = time.monotonic()
+    
+    logger.info(f"[INFO] Process started for prompt enrichment. Received user_id: {request.user_id}, session_id: {request.session_id}")
+
+    # 0. Resolve the true session ID by combining user ID + fetched session ID
+    current_session = request.session_id
+    if not current_session:
+        current_session = await get_current_session_id(request.user_id)
+        
+    actual_session_id = f"{request.user_id}::{current_session}"
+
     logger.info(
-        "[EnrichService:request] session=%s user=%s | prompt_len=%d chars | store=%s",
-        request.session_id,
-        request.user_id or "anonymous",
+        "[EnrichService:request] actual_session_id=%s user=%s | prompt_len=%d chars | store=%s",
+        actual_session_id,
+        request.user_id,
         len(request.prompt),
         "redis" if active_store else "in-memory",
     )
 
     # 1. Ensure session is loaded into L1 cache from Redis (no-op on cache hit)
     if active_store is not None:
-        await active_store.ensure_loaded(request.session_id)
+        await active_store.ensure_loaded(actual_session_id)
 
     # 2. Fetch all user context concurrently
     t0 = time.monotonic()
@@ -249,12 +282,12 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
             get_user_profile_information(request.user_id),
         )
     except Exception as exc:
-        logger.error("[EnrichService:user_ctx_error] session=%s | %s", request.session_id, exc)
+        logger.error("[EnrichService:user_ctx_error] session=%s | %s", actual_session_id, exc)
         raise HTTPException(status_code=500, detail=f"Error fetching user context: {exc}")
 
     logger.debug(
         "[EnrichService:user_ctx_done] session=%s | latency=%.3fs",
-        request.session_id, time.monotonic() - t0,
+        actual_session_id, time.monotonic() - t0,
     )
 
     user_context = (
@@ -266,7 +299,7 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     # 3. ATCE: assemble the token-budget-aware message list
     store = active_store or conversation_store
     messages = assemble_messages(
-        session_id=request.session_id,
+        session_id=actual_session_id,
         new_message=request.prompt,
         user_context=user_context,
         cfg=atce_cfg,
@@ -283,12 +316,12 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
             # ── Mock path ────────────────────────────────────────────────────
             logger.warning(
                 "[EnrichService:mock_llm] session=%s | OPENAI_API_KEY not set — mock response",
-                request.session_id,
+                actual_session_id,
             )
-            session = store.get_or_create(request.session_id)
+            session = store.get_or_create(actual_session_id)
             llm_response = (
                 f"[MOCK RESPONSE] Received: '{request.prompt}'. "
-                f"Turn {session.turn_counter + 1} | session '{request.session_id}'. "
+                f"Turn {session.turn_counter + 1} | session '{actual_session_id}'. "
                 f"Context: {len(messages)} msgs "
                 f"({len([m for m in messages if m['role'] != 'system'])} history + system)."
             )
@@ -296,7 +329,7 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
             # ── Real path ────────────────────────────────────────────────────
             logger.debug(
                 "[EnrichService:llm_call] session=%s | model=%s | messages=%d",
-                request.session_id, atce_cfg.model, len(messages),
+                actual_session_id, atce_cfg.model, len(messages),
             )
             client = _get_llm_client()
             completion = await client.chat.completions.create(
@@ -310,7 +343,7 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
             logger.info(
                 "[EnrichService:llm_done] session=%s | latency=%.2fs | "
                 "prompt_tokens=%d | completion_tokens=%d | total_tokens=%d",
-                request.session_id,
+                actual_session_id,
                 time.monotonic() - t0,
                 usage.prompt_tokens if usage else -1,
                 usage.completion_tokens if usage else -1,
@@ -320,28 +353,28 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     except Exception as exc:
         logger.error(
             "[EnrichService:llm_error] session=%s | after %.2fs: %s",
-            request.session_id, time.monotonic() - t0, exc,
+            actual_session_id, time.monotonic() - t0, exc,
         )
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}")
 
     # 5. Store turn + persist to Redis in the background (zero added latency)
     background_tasks.add_task(
         _store_and_persist,
-        session_id=request.session_id,
+        session_id=actual_session_id,
         user_message=request.prompt,
         llm_response=llm_response,
     )
     logger.debug(
         "[EnrichService:bg_task] session=%s | _store_and_persist registered",
-        request.session_id,
+        actual_session_id,
     )
 
-    session = store.get_or_create(request.session_id)
+    session = store.get_or_create(actual_session_id)
     total_elapsed = time.monotonic() - request_start
     logger.info(
         "[EnrichService:done] session=%s | total_latency=%.2fs | "
         "response_len=%d chars | turn=%d",
-        request.session_id,
+        actual_session_id,
         total_elapsed,
         len(llm_response),
         session.turn_counter + 1,
@@ -350,7 +383,7 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     return EnrichResponse(
         enriched_prompt=enriched_prompt_debug,
         llm_response=llm_response,
-        session_id=request.session_id,
+        session_id=actual_session_id,
         turn_index=session.turn_counter + 1,
     )
 

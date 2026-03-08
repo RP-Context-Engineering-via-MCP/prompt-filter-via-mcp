@@ -17,14 +17,15 @@ export function createMcpServer() {
             enable_filter: z.boolean().optional().default(true)
         },
         async ({ prompt, enable_filter }) => {
+            console.info(`[INFO] MCP Server received 'process_prompt'. Prompt: "${prompt}". Calling Prompt Enrichment Service at http://127.0.0.1:3004/enrich...`);
             console.log(`[MCP Server] Received prompt: ${prompt} | Filter Enabled: ${enable_filter}`);
 
             try {
                 // 1. Process through Prompt Enrichment Service using the received prompt (which is already secured if filter was enabled)
-                const enrichResponse = await fetch('http://localhost:3004/enrich', {
+                const enrichResponse = await fetch('http://127.0.0.1:3004/enrich', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt: prompt, session_id: "mcp_hardcoded_session" })
+                    body: JSON.stringify({ prompt: prompt, user_id: "5ca4d3ee-a139-44f9-9f9a-84655025a8f2" })
                 });
 
                 if (!enrichResponse.ok) {
@@ -77,6 +78,7 @@ export function createMcpServer() {
             model: z.string().optional().describe("AI model name if detectable")
         },
         async ({ user_prompt, llm_response, session_id, source, model }) => {
+            console.info(`[INFO] MCP Server received 'capture_chat'. Calling Chat Logger Backend to log chat for session: ${session_id || 'none'}`);
             console.log(`[MCP Server] capture_chat called | session: ${session_id || 'none'} | source: ${source}`);
 
             try {
