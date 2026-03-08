@@ -14,6 +14,8 @@ export async function connectDB() {
 
 const chatLogSchema = new mongoose.Schema({
     session_id: { type: String, required: false },
+    selected_session_id: { type: String, required: false },
+    user_id: { type: String, required: false },
     source: { type: String, required: false },
     user_prompt: { type: String, required: true },
     llm_response: { type: String, required: true },
