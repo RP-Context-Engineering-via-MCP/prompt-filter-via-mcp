@@ -7,7 +7,22 @@ const router = Router();
 // POST /api/chats — Save a new chat log
 router.post('/', async (req, res) => {
     try {
-        const { session_id, source, user_prompt, llm_response, metadata } = req.body;
+        let { session_id, source, user_prompt, llm_response, metadata, selected_session_id, user_id } = req.body;
+
+        if (!selected_session_id) {
+            const effectiveUserId = user_id || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
+            try {
+                const sessionRes = await fetch(`http://localhost:8080/api/users/${effectiveUserId}/current-session`);
+                if (sessionRes.ok) {
+                    const sessionData = await sessionRes.json();
+                    if (sessionData.current_session_id) {
+                        selected_session_id = sessionData.current_session_id;
+                    }
+                }
+            } catch (err) {
+                console.error(`[chatRoutes] Failed to fetch current session for user ${effectiveUserId}:`, err.message);
+            }
+        }
 
         if (!user_prompt || !llm_response) {
             return res.status(400).json({
@@ -17,6 +32,8 @@ router.post('/', async (req, res) => {
 
         const chatLog = new ChatLog({
             session_id,
+            selected_session_id,
+            user_id,
             source,
             user_prompt,
             llm_response,
@@ -27,6 +44,7 @@ router.post('/', async (req, res) => {
         });
 
         const saved = await chatLog.save();
+        console.info(`[INFO] Chat log saved successfully. ID: ${saved._id}, User: ${user_id || 'N/A'}, AppSession: ${selected_session_id || 'N/A'}`);
         res.status(201).json(saved);
 
         // Check if condensation should be triggered
