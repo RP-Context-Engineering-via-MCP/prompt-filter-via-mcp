@@ -1,0 +1,20 @@
+{
+  "name": "chat-logger-backend",
+  "version": "1.0.0",
+  "description": "REST API backend for logging chat interactions to MongoDB",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "mongoose": "^9.2.3"
+  }
+}

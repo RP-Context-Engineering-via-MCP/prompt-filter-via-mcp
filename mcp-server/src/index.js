@@ -1,152 +1,48 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { randomUUID } from 'crypto';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { z } from 'zod';
-import { spawn } from 'child_process';
-import path from 'path';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
+import { createMcpServer } from './tools.js';
 
 const app = express();
 app.use(cors());
-// app.use(express.json()); // Removed to avoid consuming stream for MCP
 
+// Parse JSON only for the /mcp endpoint (SSE endpoints must not consume the stream)
+app.use('/mcp', express.json());
 
-const mcpServer = new McpServer({
-    name: "chat-app-backend",
-    version: "1.0.0"
-});
+// --- Session stores ---
+let transports = new Map();       // SSE sessions
+let httpTransports = new Map();   // Streamable HTTP sessions (ChatGPT)
 
-// Define the tool to process prompts
-mcpServer.tool(
-    "process_prompt",
-    { 
-        prompt: z.string(),
-        enable_filter: z.boolean().optional().default(true)
-    },
-    async ({ prompt, enable_filter }) => {
-        console.log(`[MCP Server] Received prompt: ${prompt} | Filter Enabled: ${enable_filter}`);
-
-        try {
-            let securedPrompt = prompt;
-            let pfeData = null;
-
-            // 1. Process through Prompt Filter Engine if ON
-            if (enable_filter) {
-                const filterResponse = await fetch('http://localhost:3003/filter', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ prompt })
-                });
-
-                if (!filterResponse.ok) {
-                    const errorText = await filterResponse.text();
-                    console.error(`Filter engine returned error: ${filterResponse.status} - ${errorText}`);
-                    return {
-                        content: [{
-                            type: "text",
-                            text: `Filter engine functionality unavailable (Error ${filterResponse.status}). Please ensure the PFE service is running on Port 3003.`
-                        }]
-                    };
-                }
-
-                pfeData = await filterResponse.json();
-                securedPrompt = pfeData.redacted;
-            }
-
-            // 2. Process through Prompt Enrichment Service
-            const enrichResponse = await fetch('http://localhost:3004/enrich', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: securedPrompt })
-            });
-
-            if (!enrichResponse.ok) {
-                const errorText = await enrichResponse.text();
-                console.error(`Enrichment service returned error: ${enrichResponse.status} - ${errorText}`);
-                return {
-                    content: [{
-                        type: "text",
-                        text: `Context Engine functionality unavailable (Error ${enrichResponse.status}). Please ensure the Prompt Enrichment Service is running on Port 3004.`
-                    }]
-                };
-            }
-
-            const enrichData = await enrichResponse.json();
-            const llmAnswer = enrichData.llm_response;
-
-            // 3. Format final response logic
-            let formattedResponse = "";
-
-            if (enable_filter && pfeData) {
-                const analysisSummary = pfeData.enriched_analysis
-                    ? JSON.stringify(pfeData.enriched_analysis, null, 2)
-                    : "No analysis available";
-
-                formattedResponse = `User Prompt:
-${prompt}
-
-PII Detection Prompt:
-${pfeData.labeled}
-
-Secured Prompt:
-${pfeData.redacted}
-
-Analysis:
-${analysisSummary}
-
----
-AI Response:
-${llmAnswer}`;
-            } else {
-                formattedResponse = `${llmAnswer}`;
-            }
-
-            return {
-                content: [{
-                    type: "text",
-                    text: formattedResponse
-                }]
-            };
-
-        } catch (error) {
-            console.error("Error processing prompt:", error);
-            return {
-                content: [{
-                    type: "text",
-                    text: `Error processing prompt: ${error.message}. Please check if the services are running.`
-                }]
-            };
-        }
-    }
-);
-
-let transports = new Map();
-
-// Add a root route for browser verification
+// Root route
 app.get('/', (req, res) => {
     res.send('MCP Server is running. Use the Web Client to chat.');
 });
 
+// ─────────────────────────────────────────────
+// Legacy SSE transport (Claude Desktop / web-client)
+// ─────────────────────────────────────────────
 app.get('/sse', async (req, res) => {
     console.log("New SSE connection established");
+    res.setHeader('X-Accel-Buffering', 'no');
     const transport = new SSEServerTransport("/message", res);
     console.log(`Assigned session ID: ${transport.sessionId}`);
 
-    // Store transport by sessionId
     transports.set(transport.sessionId, transport);
 
-    // Clean up on close
     res.on('close', () => {
         console.log(`Connection closed for session: ${transport.sessionId}`);
         transports.delete(transport.sessionId);
     });
 
+    const mcpServer = createMcpServer();
     await mcpServer.connect(transport);
 });
 
 app.post('/message', async (req, res) => {
-    // console.log("Received POST /message request");
-
     const sessionId = req.query.sessionId;
     if (!sessionId) {
         console.error("Missing sessionId in request");
@@ -164,7 +60,74 @@ app.post('/message', async (req, res) => {
     await transport.handlePostMessage(req, res);
 });
 
+// ─────────────────────────────────────────────
+// Streamable HTTP transport (ChatGPT)
+// POST /mcp  — send messages / initialize session
+// GET  /mcp  — open SSE stream for server-to-client events
+// DELETE /mcp — close session
+// ─────────────────────────────────────────────
+app.post('/mcp', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'];
+
+    if (sessionId && httpTransports.has(sessionId)) {
+        // Route to existing session
+        const transport = httpTransports.get(sessionId);
+        await transport.handleRequest(req, res, req.body);
+        return;
+    }
+
+    if (!sessionId && isInitializeRequest(req.body)) {
+        // New session — create transport + MCP server
+        const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => randomUUID(),
+            onsessioninitialized: (newSessionId) => {
+                console.log(`[ChatGPT] New MCP session: ${newSessionId}`);
+                httpTransports.set(newSessionId, transport);
+            }
+        });
+
+        transport.onclose = () => {
+            if (transport.sessionId) {
+                console.log(`[ChatGPT] Session closed: ${transport.sessionId}`);
+                httpTransports.delete(transport.sessionId);
+            }
+        };
+
+        const mcpServer = createMcpServer();
+        await mcpServer.connect(transport);
+        await transport.handleRequest(req, res, req.body);
+        return;
+    }
+
+    res.status(400).json({ error: 'Bad request: missing or invalid session' });
+});
+
+app.get('/mcp', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'];
+    if (!sessionId || !httpTransports.has(sessionId)) {
+        res.status(400).json({ error: 'Invalid or missing session ID' });
+        return;
+    }
+    res.setHeader('X-Accel-Buffering', 'no');
+    const transport = httpTransports.get(sessionId);
+    await transport.handleRequest(req, res);
+});
+
+app.delete('/mcp', async (req, res) => {
+    const sessionId = req.headers['mcp-session-id'];
+    if (!sessionId || !httpTransports.has(sessionId)) {
+        res.status(400).json({ error: 'Invalid or missing session ID' });
+        return;
+    }
+    const transport = httpTransports.get(sessionId);
+    await transport.handleRequest(req, res);
+    httpTransports.delete(sessionId);
+    console.log(`[ChatGPT] Session deleted: ${sessionId}`);
+});
+
 const PORT = 3001;
 app.listen(PORT, () => {
     console.log(`MCP Server running on port ${PORT}`);
+    console.log(`  SSE transport:              http://localhost:${PORT}/sse`);
+    console.log(`  Streamable HTTP transport:  http://localhost:${PORT}/mcp`);
 });
