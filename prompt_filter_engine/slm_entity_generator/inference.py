@@ -6,8 +6,10 @@ import os
 class FineTunedAnonymizer:
     def __init__(self, base_model_id="Qwen/Qwen2.5-0.5B-Instruct", adapter_path=None):
         if adapter_path is None:
-             # Default to the path found in the user's workspace
-             adapter_path = r"d:\SLIIIT\Research\Dev\chatApp\traning-dataset\Qwen2.5-0.5B-Anonymizer-SLM"
+            adapter_path = os.environ.get(
+                "ANONYMIZER_ADAPTER_PATH",
+                "/app/traning-dataset/Qwen2.5-0.5B-Anonymizer-SLM"
+            )
         
         from prompt_filter_engine.slm_entity_generator.shared_slm import SharedSLMManager
         self.slm_manager = SharedSLMManager()

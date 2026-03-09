@@ -1,0 +1,82 @@
+version: "3.8"
+
+services:
+  prompt-filter-engine:
+    build:
+      context: ./prompt_filter_engine
+      dockerfile: Dockerfile
+    container_name: prompt_filter_engine
+    ports:
+      - "3003:3003"
+    environment:
+      - PYTHONPATH=/app
+    volumes:
+      - ./traning-dataset:/app/traning-dataset
+      - hf-cache:/root/.cache/huggingface
+    restart: unless-stopped
+    networks:
+      - chat-app-network
+
+  prompt-enrichment-service:
+    build:
+      context: ./prompt_enrichment_service
+      dockerfile: Dockerfile
+    container_name: prompt_enrichment_service
+    ports:
+      - "3004:3004"
+    env_file:
+      - ./prompt_enrichment_service/.env
+    restart: unless-stopped
+    networks:
+      - chat-app-network
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+      dockerfile: Dockerfile
+    container_name: mcp-server
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./mcp-server/.env
+    restart: unless-stopped
+    networks:
+      - chat-app-network
+
+  chat-logger-backend:
+    build:
+      context: ./chat-logger-backend
+      dockerfile: Dockerfile
+    container_name: chat-logger-backend
+    ports:
+      - "3005:3005"
+    env_file:
+      - ./chat-logger-backend/.env
+    restart: unless-stopped
+    networks:
+      - chat-app-network
+
+  web-client:
+    build:
+      context: ./web-client
+      dockerfile: Dockerfile
+    container_name: web-client
+    ports:
+      - "3009:3009"
+    env_file:
+      - ./web-client/.env
+    # To enable hot reloading from your host machine during development:
+    volumes:
+      - ./web-client/src:/app/src
+      - ./web-client/public:/app/public
+    restart: unless-stopped
+    networks:
+      - chat-app-network
+
+networks:
+  chat-app-network:
+    name: chat-app-network
+    driver: bridge
+
+volumes:
+  hf-cache:

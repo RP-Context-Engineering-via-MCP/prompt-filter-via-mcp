@@ -1,4 +1,5 @@
 import json
+import os
 import re
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -16,7 +17,10 @@ class HealthEntityClassifier:
     """
 
     BASE_MODEL   = "Qwen/Qwen2.5-0.5B-Instruct"
-    ADAPTER_PATH = r"d:\SLIIIT\Research\Dev\chatApp\traning-dataset\Qwen2.5-0.5B-Health-Lora-Finetune"
+    ADAPTER_PATH = os.environ.get(
+        "HEALTH_ADAPTER_PATH",
+        "/app/traning-dataset/Qwen2.5-0.5B-Health-Lora-Finetune"
+    )
 
     SYSTEM_PROMPT = (
         "You are a medical entity classifier. Given an entity and its surrounding context, "
