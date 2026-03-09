@@ -9,20 +9,29 @@ router.post('/', async (req, res) => {
     try {
         let { session_id, source, user_prompt, llm_response, metadata, selected_session_id, user_id } = req.body;
 
+        const effectiveUserId = user_id || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
+
         if (!selected_session_id) {
-            const effectiveUserId = user_id || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
             try {
+                console.log(`[chatRoutes DEBUG] Fetching current session for ${effectiveUserId} from http://localhost:8080/api/users/${effectiveUserId}/current-session`);
                 const sessionRes = await fetch(`http://localhost:8080/api/users/${effectiveUserId}/current-session`);
+                console.log(`[chatRoutes DEBUG] Fetch response status: ${sessionRes.status}`);
                 if (sessionRes.ok) {
                     const sessionData = await sessionRes.json();
+                    console.log(`[chatRoutes DEBUG] Fetch response data:`, sessionData);
                     if (sessionData.current_session_id) {
                         selected_session_id = sessionData.current_session_id;
+                        console.log(`[chatRoutes DEBUG] Set selected_session_id to ${selected_session_id}`);
                     }
+                } else {
+                    console.log(`[chatRoutes DEBUG] Fetch not ok. Body:`, await sessionRes.text());
                 }
             } catch (err) {
                 console.error(`[chatRoutes] Failed to fetch current session for user ${effectiveUserId}:`, err.message);
             }
         }
+
+        console.log(`[chatRoutes DEBUG] Final selected_session_id before save:`, selected_session_id);
 
         if (!user_prompt || !llm_response) {
             return res.status(400).json({
@@ -33,7 +42,7 @@ router.post('/', async (req, res) => {
         const chatLog = new ChatLog({
             session_id,
             selected_session_id,
-            user_id,
+            user_id: effectiveUserId,
             source,
             user_prompt,
             llm_response,
@@ -44,7 +53,7 @@ router.post('/', async (req, res) => {
         });
 
         const saved = await chatLog.save();
-        console.info(`[INFO] Chat log saved successfully. ID: ${saved._id}, User: ${user_id || 'N/A'}, AppSession: ${selected_session_id || 'N/A'}`);
+        console.info(`[INFO] Chat log saved successfully. ID: ${saved._id}, User: ${effectiveUserId}, AppSession: ${selected_session_id || 'N/A'}`);
         res.status(201).json(saved);
 
         // Check if condensation should be triggered
@@ -56,18 +65,27 @@ router.post('/', async (req, res) => {
 });
 
 // GET /api/chats — Retrieve chat logs with optional filters
+// Supports: session_id, source, user_id, selected_session_id, skip, limit
 router.get('/', async (req, res) => {
     try {
-        const { session_id, source, limit = 50 } = req.query;
+        const { session_id, source, user_id, selected_session_id, skip = 0, limit = 50 } = req.query;
 
         const filter = {};
         if (session_id) filter.session_id = session_id;
         if (source) filter.source = source;
+        if (user_id) filter.user_id = user_id;
+        if (selected_session_id) filter.selected_session_id = selected_session_id;
+
+        console.info(`[INFO] GET /api/chats | Filters: user_id=${user_id || 'N/A'}, selected_session_id=${selected_session_id || 'N/A'}, session_id=${session_id || 'N/A'}, source=${source || 'N/A'}, skip=${skip}, limit=${limit}`);
+
+        const sortOrder = req.query.sort_desc === 'true' ? -1 : 1;
 
         const chats = await ChatLog.find(filter)
-            .sort({ timestamp: -1 })
+            .sort({ timestamp: sortOrder })  // chronological order (oldest first) if 1, newest if -1
+            .skip(parseInt(skip))
             .limit(parseInt(limit));
 
+        console.info(`[INFO] GET /api/chats | Found ${chats.length} chat logs matching filters`);
         res.json(chats);
     } catch (error) {
         console.error('Error retrieving chat logs:', error);

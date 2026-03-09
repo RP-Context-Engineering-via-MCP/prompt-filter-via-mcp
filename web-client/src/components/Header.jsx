@@ -4,7 +4,9 @@ const Header = ({ selectedModel, sessionContext, onSessionContextChange }) => {
     const [isContextOpen, setIsContextOpen] = useState(false);
     const [contexts, setContexts] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
     const [errorMsg, setErrorMsg] = useState('');
+    const [toast, setToast] = useState(null); // { type: 'success'|'error', message: string }
     const dropdownRef = useRef(null);
 
     useEffect(() => {
@@ -55,19 +57,33 @@ const Header = ({ selectedModel, sessionContext, onSessionContextChange }) => {
         }
     }, [isContextOpen, contexts.length, errorMsg]);
 
+    const showToast = (type, message) => {
+        setToast({ type, message });
+        setTimeout(() => setToast(null), 3000);
+    };
+
     const handleSessionSelect = async (ctx) => {
         const userId = localStorage.getItem('userId') || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
-        try {
-            if (ctx) {
-                // Update session on the backend user service
-                await fetch(`http://localhost:8080/api/users/${userId}/sessions/${ctx.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' }
+        if (ctx) {
+            setIsUpdating(true);
+            try {
+                const res = await fetch(`http://localhost:8080/api/users/${userId}/active-session`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: ctx.id })
                 });
+                if (!res.ok) {
+                    const errText = await res.text();
+                    throw new Error(errText || `Server returned ${res.status}`);
+                }
+                showToast('success', `Session "${ctx.title}" activated`);
+            } catch (error) {
+                console.error('Failed to update session on backend', error);
+                showToast('error', `Failed to activate session: ${error.message}`);
+                // Still update UI optimistically so the user sees the selection
+            } finally {
+                setIsUpdating(false);
             }
-        } catch (error) {
-            console.error('Failed to update session on backend', error);
-            // Optionally set error toast or message here
         }
         onSessionContextChange(ctx);
         setIsContextOpen(false);
@@ -99,18 +115,28 @@ const Header = ({ selectedModel, sessionContext, onSessionContextChange }) => {
                 <div className="relative" ref={dropdownRef}>
                     <button
                         onClick={() => setIsContextOpen(!isContextOpen)}
+                        disabled={isUpdating}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border transition-all duration-200 ${sessionContext
                             ? 'bg-indigo-600 text-white border-indigo-600 shadow-md hover:bg-indigo-700'
                             : 'bg-white text-slate-700 border-slate-200 shadow-sm hover:border-indigo-300'
-                            }`}
+                            } ${isUpdating ? 'opacity-70 cursor-not-allowed' : ''}`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
-                        </svg>
-                        <span>{sessionContext ? sessionContext.title : 'Session Context'}</span>
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${isContextOpen ? 'rotate-180' : ''}`}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-                        </svg>
+                        {isUpdating ? (
+                            <svg className="w-4 h-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                        ) : (
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 9.776c.112-.017.227-.026.344-.026h15.812c.117 0 .232.009.344.026m-16.5 0a2.25 2.25 0 00-1.883 2.542l.857 6a2.25 2.25 0 002.227 1.932H19.05a2.25 2.25 0 002.227-1.932l.857-6a2.25 2.25 0 00-1.883-2.542m-16.5 0V6A2.25 2.25 0 016 3.75h3.879a1.5 1.5 0 011.06.44l2.122 2.12a1.5 1.5 0 001.06.44H18A2.25 2.25 0 0120.25 9v.776" />
+                            </svg>
+                        )}
+                        <span>{isUpdating ? 'Activating...' : sessionContext ? sessionContext.title : 'Session Context'}</span>
+                        {!isUpdating && (
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor" className={`w-3 h-3 transition-transform duration-200 ${isContextOpen ? 'rotate-180' : ''}`}>
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                            </svg>
+                        )}
                     </button>
 
                     {isContextOpen && (
@@ -212,6 +238,25 @@ const Header = ({ selectedModel, sessionContext, onSessionContextChange }) => {
                     </svg>
                 </button>
             </div>
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed bottom-5 right-5 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold transition-all animate-fade-in ${toast.type === 'success'
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    : 'bg-red-50 text-red-800 border-red-200'
+                    }`}>
+                    {toast.type === 'success' ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                        </svg>
+                    ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    )}
+                    {toast.message}
+                </div>
+            )}
         </header>
     );
 };
