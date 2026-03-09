@@ -78,8 +78,10 @@ router.get('/', async (req, res) => {
 
         console.info(`[INFO] GET /api/chats | Filters: user_id=${user_id || 'N/A'}, selected_session_id=${selected_session_id || 'N/A'}, session_id=${session_id || 'N/A'}, source=${source || 'N/A'}, skip=${skip}, limit=${limit}`);
 
+        const sortOrder = req.query.sort_desc === 'true' ? -1 : 1;
+
         const chats = await ChatLog.find(filter)
-            .sort({ timestamp: 1 })  // chronological order (oldest first) for sync
+            .sort({ timestamp: sortOrder })  // chronological order (oldest first) if 1, newest if -1
             .skip(parseInt(skip))
             .limit(parseInt(limit));
 

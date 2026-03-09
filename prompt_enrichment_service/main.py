@@ -44,6 +44,8 @@ app = FastAPI(title="Prompt Enrichment Service", version="2.0.0")
 
 USER_MANAGER_URL = os.environ.get("USER_MANAGER_URL", "http://localhost:8080")
 CHAT_LOGGER_URL = os.environ.get("CHAT_LOGGER_URL", "http://localhost:3005")
+PREDEFINED_PROFILE_URL = os.environ.get("PREDEFINED_PROFILE_URL", "http://localhost:8002")
+BEHAVIOR_EXTRACTION_URL = os.environ.get("BEHAVIOR_EXTRACTION_URL", "http://localhost:8001")
 
 # ---------------------------------------------------------------------------
 # Active conversation store
@@ -121,6 +123,7 @@ class EnrichRequest(BaseModel):
     user_id: str                # Required: identifies the user for fetching context
     session_id: str | None = None  # Optional: identifies the conversation session if known
     source: str = "web_client"     # "mcp" | "web_client" — determines enrichment mode
+    mcp_client: str | None = None  # Optional: specific client name (e.g., 'claude_desktop')
 
 
 class EnrichResponse(BaseModel):
@@ -150,19 +153,103 @@ async def get_current_session_id(user_id: str) -> str:
         logger.error(f"[UserManager] Error fetching session for user {user_id}: {exc}")
         return "default"
 
-async def get_user_behavior_extraction(user_id: str | None = None) -> str:
-    await asyncio.sleep(0.05)
-    return "User prefers clear, stepwise, and actionable instructions."
+async def get_predefined_profile_id(user_id: str) -> str:
+    """Fetch the predefined profile ID for the given user from the User Manager."""
+    try:
+        url = f"{USER_MANAGER_URL}/api/users/{user_id}/predefined-profile-id"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("predefined_profile_id")
+                else:
+                    logger.warning(f"[UserManager] Failed to get predefined profile id for user {user_id}: {response.status}")
+    except Exception as exc:
+        logger.error(f"[UserManager] Error fetching predefined profile id for user {user_id}: {exc}")
+    return ""
+
+
+async def get_predefined_profile(profile_id: str) -> str:
+    """Fetch the predefined profile details given a profile ID."""
+    if not profile_id:
+        return "No predefined profile available."
+    try:
+        url = f"{PREDEFINED_PROFILE_URL}/api/predefined-profiles/{profile_id}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    profile_str = []
+                    if data.get("profile_name"):
+                        profile_str.append(f"Profile: {data['profile_name']}")
+                    if data.get("context_statement"):
+                        profile_str.append(f"Context: {data['context_statement']}")
+                    if data.get("assumptions"):
+                        profile_str.append("Assumptions: " + ", ".join(data["assumptions"]))
+                    if data.get("ai_guidance"):
+                        profile_str.append("Guidance: " + ", ".join(data["ai_guidance"]))
+                    if data.get("preferred_response_style"):
+                        profile_str.append("Style: " + ", ".join(data["preferred_response_style"]))
+                    if data.get("context_injection_prompt"):
+                        profile_str.append(f"Injection: {data['context_injection_prompt']}")
+                    return "\n".join(profile_str) if profile_str else "Empty Predefined Profile."
+                else:
+                    logger.warning(f"[ProfileService] Failed to get profile {profile_id}: {response.status}")
+    except Exception as exc:
+        logger.error(f"[ProfileService] Error fetching profile {profile_id}: {exc}")
+    return "Failed to fetch predefined profile."
+
+
+async def get_latest_chat_log(user_id: str, selected_session_id: str) -> tuple[list, str | None]:
+    """Fetch the latest chat turn for behavior extraction, and the source of that log."""
+    try:
+        url = f"{CHAT_LOGGER_URL}/api/chats?user_id={user_id}&selected_session_id={selected_session_id}&limit=1&sort_desc=true"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=5) as response:
+                if response.status == 200:
+                    chat_logs = await response.json()
+                    recent_history = []
+                    last_source = None
+                    if chat_logs:
+                        log = chat_logs[0]
+                        last_source = log.get("source")
+                        if log.get("user_prompt"):
+                            recent_history.append({"role": "user", "text": log["user_prompt"]})
+                        if log.get("llm_response"):
+                            recent_history.append({"role": "assistant", "text": log["llm_response"]})
+                    return recent_history, last_source
+                else:
+                    logger.warning(f"[ChatLogger] Failed to get latest chat log: {response.status}")
+    except Exception as exc:
+        logger.error(f"[ChatLogger] Error fetching latest chat logs: {exc}")
+    return [], None
+
+
+async def get_behavior_extraction_data(prompt: str, user_id: str, session_id: str, recent_history: list) -> str:
+    """Post to Behavior Extraction service and return the extracted string."""
+    try:
+        url = f"{BEHAVIOR_EXTRACTION_URL}/v2/extract"
+        payload = {
+            "prompt": prompt,
+            "user_id": user_id,
+            "session_id": session_id,
+            "recent_history": recent_history
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=10) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get("extracted_behavior") or data.get("behavior") or str(data)
+                else:
+                    logger.warning(f"[BehaviorService] Failed extraction: {response.status}")
+    except Exception as exc:
+        logger.error(f"[BehaviorService] Error positing to extraction: {exc}")
+    return "No behavior extracted."
 
 
 async def get_user_core_behavior_extraction(user_id: str | None = None) -> str:
     await asyncio.sleep(0.05)
-    return "User is a software engineer interested in AI and robust system architectures."
-
-
-async def get_user_profile_information(user_id: str | None = None) -> str:
-    await asyncio.sleep(0.05)
-    return "Technical background; prefers Python and Node.js."
+    return "Chathura will provide the core_behavior mock"
 
 
 # ---------------------------------------------------------------------------
@@ -443,10 +530,15 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
         # 3. Fetch user behavior enrichment concurrently
         t0 = time.monotonic()
         try:
-            behavior_ctx, core_behavior_ctx, profile_ctx = await asyncio.gather(
-                get_user_behavior_extraction(request.user_id),
+            profile_id, (recent_history, last_source) = await asyncio.gather(
+                get_predefined_profile_id(request.user_id),
+                get_latest_chat_log(request.user_id, current_session),
+            )
+            
+            profile_ctx, behavior_ctx, core_behavior_ctx = await asyncio.gather(
+                get_predefined_profile(profile_id),
+                get_behavior_extraction_data(request.prompt, request.user_id, current_session, recent_history),
                 get_user_core_behavior_extraction(request.user_id),
-                get_user_profile_information(request.user_id),
             )
         except Exception as exc:
             logger.error("[EnrichService:mcp_ctx_error] session=%s | %s", actual_session_id, exc)
@@ -464,11 +556,49 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
             time.monotonic() - t0,
         )
 
-        # 4. Build enriched prompt (user prompt + behaviors, NO ATCE history)
+        # 3.5 Check if client switch happened
+        atce_history_str = ""
+        if request.mcp_client and last_source and request.mcp_client != last_source:
+            logger.info(f"[EnrichService:mcp] Client switch detected {last_source} -> {request.mcp_client}")
+            print(f">>> [SYS OUT] ATCE USED! User switched LLM clients from {last_source} to {request.mcp_client}. Injecting previous conversation history...")
+            
+            session_mem = store.get(actual_session_id)
+            if session_mem:
+                history_lines = ["\n--- Previous Conversation Context (ATCE) ---"]
+                if session_mem.tier3_core_memory:
+                    history_lines.append(f"Core Memory:\n{session_mem.tier3_core_memory}\n")
+                
+                if session_mem.tier2_summaries:
+                    history_lines.append("Recent Topic Summaries:")
+                    for s in session_mem.tier2_summaries:
+                        history_lines.append(f"- {s.text}")
+                    history_lines.append("")
+                
+                if session_mem.tier1_buffer:
+                    history_lines.append("Recent Messages:")
+                    for msg in session_mem.tier1_buffer:
+                        role = "User" if msg.role == "user" else "Assistant"
+                        history_lines.append(f"[{role}]: {msg.content}")
+                
+                history_lines.append("------------------------------------------\n")
+                atce_history_str = "\n".join(history_lines)
+            else:
+                print(">>> [SYS OUT] ATCE NOT USED: No existing session found.")
+        else:
+            print(">>> [SYS OUT] ATCE NOT USED: Same LLM client or first message.")
+
+        # 4. Build enriched prompt (user prompt + behaviors, maybe ATCE history)
         enriched_prompt = (
             f"{user_context}\n\n"
-            f"User Prompt: {request.prompt}"
         )
+        if atce_history_str:
+            enriched_prompt += f"{atce_history_str}\n"
+
+        enriched_prompt += f"User Prompt: {request.prompt}"
+
+        print("\n\n=== [SYS OUT] MOCK MCP ENRICHED PROMPT ===")
+        print(enriched_prompt)
+        print("==========================================\n\n")
 
         session = store.get_or_create(actual_session_id)
         total_elapsed = time.monotonic() - request_start
@@ -502,10 +632,15 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     # 2. Fetch all user context concurrently
     t0 = time.monotonic()
     try:
-        behavior_ctx, core_behavior_ctx, profile_ctx = await asyncio.gather(
-            get_user_behavior_extraction(request.user_id),
+        profile_id, (recent_history, last_source) = await asyncio.gather(
+            get_predefined_profile_id(request.user_id),
+            get_latest_chat_log(request.user_id, current_session),
+        )
+
+        profile_ctx, behavior_ctx, core_behavior_ctx = await asyncio.gather(
+            get_predefined_profile(profile_id),
+            get_behavior_extraction_data(request.prompt, request.user_id, current_session, recent_history),
             get_user_core_behavior_extraction(request.user_id),
-            get_user_profile_information(request.user_id),
         )
     except Exception as exc:
         logger.error("[EnrichService:user_ctx_error] session=%s | %s", actual_session_id, exc)
@@ -532,7 +667,16 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
         store=store,
     )
 
-    enriched_prompt_debug = messages[0]["content"] if messages else ""
+    debug_lines = []
+    for m in messages:
+        role = m.get("role", "unknown").upper()
+        content = m.get("content", "")
+        debug_lines.append(f"[{role}]\n{content}")
+    enriched_prompt_debug = "\n\n".join(debug_lines)
+
+    print("\n\n=== [SYS OUT] MOCK WEB_CLIENT ENRICHED PROMPT ===")
+    print(enriched_prompt_debug)
+    print("=================================================\n\n")
 
     # 4. Call LLM
     t0 = time.monotonic()
