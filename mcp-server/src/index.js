@@ -10,6 +10,42 @@ import { createMcpServer } from './tools.js';
 const app = express();
 app.use(cors());
 
+// ─────────────────────────────────────────────
+// Request / Response logger
+// ─────────────────────────────────────────────
+app.use((req, res, next) => {
+    const start = Date.now();
+    const via = req.headers['x-forwarded-for'] ? '🌐 ngrok' : '🏠 local';
+
+    // Capture response body for logging
+    const originalJson = res.json.bind(res);
+    const originalSend = res.send.bind(res);
+    let responseBody;
+
+    res.json = (body) => { responseBody = body; return originalJson(body); };
+    res.send = (body) => { responseBody = body; return originalSend(body); };
+
+    res.on('finish', () => {
+        const ms = Date.now() - start;
+        const statusIcon = res.statusCode < 300 ? '✅' : res.statusCode < 400 ? '↩️' : '❌';
+        const bodyPreview = responseBody
+            ? JSON.stringify(responseBody).slice(0, 80)
+            : '';
+        console.log(
+            `${statusIcon} [${new Date().toISOString()}] ${via} | ${req.method} ${req.path} → ${res.statusCode} (${ms}ms)` +
+            (bodyPreview ? ` | resp: ${bodyPreview}...` : '')
+        );
+    });
+
+    // Log incoming request
+    const reqBody = req.body && Object.keys(req.body).length
+        ? ` | body: ${JSON.stringify(req.body).slice(0, 80)}...`
+        : '';
+    console.log(`[${new Date().toISOString()}] ${via} | ${req.method} ${req.path}${reqBody}`);
+
+    next();
+});
+
 // Parse JSON only for the /mcp endpoint (SSE endpoints must not consume the stream)
 app.use('/mcp', express.json());
 
@@ -125,9 +161,29 @@ app.delete('/mcp', async (req, res) => {
     console.log(`[ChatGPT] Session deleted: ${sessionId}`);
 });
 
-const PORT = 3001;
+const PORT = process.env.PORT || 3001;
+const NGROK_URL = 'https://traducianistic-cohen-blowsiest.ngrok-free.dev';
+
 app.listen(PORT, () => {
-    console.log(`MCP Server running on port ${PORT}`);
-    console.log(`  SSE transport:              http://localhost:${PORT}/sse`);
-    console.log(`  Streamable HTTP transport:  http://localhost:${PORT}/mcp`);
+    const W = 74;
+    const line = '═'.repeat(W);
+    const pad = (s) => `║  ${s.padEnd(W - 2)}║`;
+    console.log('');
+    console.log(`╔${line}╗`);
+    console.log(pad('MCP SERVER — READY'));
+    console.log(`╠${line}╣`);
+    console.log(pad('LOCAL ENDPOINTS'));
+    console.log(pad(`Health:      http://localhost:${PORT}/`));
+    console.log(pad(`SSE:         http://localhost:${PORT}/sse`));
+    console.log(pad(`HTTP (MCP):  http://localhost:${PORT}/mcp`));
+    console.log(`╠${line}╣`);
+    console.log(pad('PUBLIC ENDPOINTS (via ngrok)'));
+    console.log(pad(`SSE:         ${NGROK_URL}/sse`));
+    console.log(pad(`HTTP (MCP):  ${NGROK_URL}/mcp`));
+    console.log(`╠${line}╣`);
+    console.log(pad('CONNECT ChatGPT:'));
+    console.log(pad('Settings → Connected Apps → Add MCP Server'));
+    console.log(pad(`URL: ${NGROK_URL}/mcp`));
+    console.log(`╚${line}╝`);
+    console.log('');
 });

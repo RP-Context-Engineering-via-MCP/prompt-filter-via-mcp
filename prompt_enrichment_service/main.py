@@ -558,9 +558,10 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
 
         # 3.5 Check if client switch happened
         atce_history_str = ""
-        if request.mcp_client and last_source and request.mcp_client != last_source:
-            logger.info(f"[EnrichService:mcp] Client switch detected {last_source} -> {request.mcp_client}")
-            print(f">>> [SYS OUT] ATCE USED! User switched LLM clients from {last_source} to {request.mcp_client}. Injecting previous conversation history...")
+        current_client = request.mcp_client or request.source  # fallback to "mcp" when client_name not sent
+        if current_client and last_source and current_client != last_source:
+            logger.info(f"[EnrichService:mcp] Client switch detected {last_source} -> {current_client}")
+            print(f">>> [SYS OUT] ATCE USED! User switched LLM clients from {last_source} to {current_client}. Injecting previous conversation history...")
             
             session_mem = store.get(actual_session_id)
             if session_mem:
