@@ -91,9 +91,9 @@ def _get_llm_client() -> AsyncAzureOpenAI:
     global _llm_client
     if _llm_client is None:
         _llm_client = AsyncAzureOpenAI(
-            api_key=os.environ.get("OPENAI_API_KEY"),
+            api_key=os.environ.get("AZURE_OPENAI_KEY", os.environ.get("OPENAI_API_KEY")),
             api_version=os.environ.get("OPENAI_API_VERSION", "2024-02-01"),
-            azure_endpoint=os.environ.get("OPENAI_ENDPOINT"),
+            azure_endpoint=os.environ.get("AZURE_OPENAI_ENDPOINT", os.environ.get("OPENAI_ENDPOINT")),
         )
     return _llm_client
 
@@ -681,7 +681,7 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
     # 4. Call LLM
     t0 = time.monotonic()
     try:
-        api_key = os.environ.get("OPENAI_API_KEY", "")
+        api_key = os.environ.get("AZURE_OPENAI_KEY", os.environ.get("OPENAI_API_KEY", ""))
         if not api_key or api_key == "your_api_key_here":
             # -- Mock path --
             logger.warning(
