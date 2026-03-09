@@ -26,8 +26,11 @@ export function createMcpServer() {
             console.log(`[MCP Server] process_prompt | source=${source} | client_name=${client_name} | Filter Enabled: ${enable_filter}`);
 
             try {
+                // Determine API URL (use env var or fallback to localhost)
+                const apiUrl = process.env.PROMPT_ENRICHMENT_API_URL || 'http://localhost:3004';
+                
                 // 1. Process through Prompt Enrichment Service with source mode
-                const enrichResponse = await fetch('http://127.0.0.1:3004/enrich', {
+                const enrichResponse = await fetch(`${apiUrl}/enrich`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt: prompt, user_id: user_id, source: source, mcp_client: client_name })

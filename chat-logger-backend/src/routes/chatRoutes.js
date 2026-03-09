@@ -13,8 +13,9 @@ router.post('/', async (req, res) => {
 
         if (!selected_session_id) {
             try {
-                console.log(`[chatRoutes DEBUG] Fetching current session for ${effectiveUserId} from http://localhost:8080/api/users/${effectiveUserId}/current-session`);
-                const sessionRes = await fetch(`http://localhost:8080/api/users/${effectiveUserId}/current-session`);
+                const userManagerUrl = process.env.USER_MANAGER_URL || 'http://host.docker.internal:8080';
+                console.log(`[chatRoutes DEBUG] Fetching current session for ${effectiveUserId} from ${userManagerUrl}/api/users/${effectiveUserId}/current-session`);
+                const sessionRes = await fetch(`${userManagerUrl}/api/users/${effectiveUserId}/current-session`);
                 console.log(`[chatRoutes DEBUG] Fetch response status: ${sessionRes.status}`);
                 if (sessionRes.ok) {
                     const sessionData = await sessionRes.json();

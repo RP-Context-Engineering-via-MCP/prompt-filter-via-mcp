@@ -38,7 +38,8 @@ export const historyService = {
         let selected_session_id = null;
         try {
             const effectiveUserId = userId || '5ca4d3ee-a139-44f9-9f9a-84655025a8f2';
-            const sessionRes = await fetch(`http://localhost:8080/api/users/${effectiveUserId}/current-session`);
+            const userManagerUrl = process.env.USER_MANAGER_URL || 'http://host.docker.internal:8080';
+            const sessionRes = await fetch(`${userManagerUrl}/api/users/${effectiveUserId}/current-session`);
             if (sessionRes.ok) {
                 const sessionData = await sessionRes.json();
                 if (sessionData.current_session_id) {
