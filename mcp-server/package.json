@@ -21,6 +21,8 @@
     "dotenv": "^17.2.3",
     "eventsource": "^4.1.0",
     "express": "^5.2.1",
-    "mongoose": "^9.2.3"
+    "jsonwebtoken": "^9.1.2",
+    "mongoose": "^9.2.3",
+    "redis": "^4.6.12"
   }
 }

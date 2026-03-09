@@ -36,6 +36,8 @@ from .session_memory import ChunkSummary, Message, SessionMemory
 logger = logging.getLogger(__name__)
 
 _KEY_PREFIX = "atce:session:"
+_USER_SESSION_PREFIX = "user:"  # Prefix for tracking user's current session
+_CURRENT_SESSION_KEY_SUFFIX = ":current_session"  # Key format: user:{user_id}:current_session
 DEFAULT_TTL  = 432_000   # 5 days
 
 
@@ -150,68 +152,82 @@ class RedisConversationStore:
             )
         return self._client
 
-    def _key(self, session_id: str) -> str:
-        return f"{_KEY_PREFIX}{session_id}"
+    def _key(self, user_id: str, session_id: str) -> str:
+        """Generate Redis key scoped to user_id"""
+        return f"{_KEY_PREFIX}{user_id}:{session_id}"
+
+    def _current_session_key(self, user_id: str) -> str:
+        """Generate key for tracking user's current active session"""
+        return f"{_USER_SESSION_PREFIX}{user_id}{_CURRENT_SESSION_KEY_SUFFIX}"
+
+    def _cache_key(self, user_id: str, session_id: str) -> str:
+        """Generate L1 cache key combining user_id and session_id for isolation"""
+        return f"{user_id}:{session_id}"
 
     # ── Sync interface (L1 cache only — used by assemble_messages) ──────────
 
-    def get_or_create(self, session_id: str) -> SessionMemory:
+    def get_or_create(self, user_id: str, session_id: str) -> SessionMemory:
         """Synchronous read from L1 cache. Creates empty session if absent."""
+        cache_key = self._cache_key(user_id, session_id)
         with self._lock:
-            if session_id not in self._local:
-                self._local[session_id] = SessionMemory(session_id=session_id)
-            return self._local[session_id]
+            if cache_key not in self._local:
+                self._local[cache_key] = SessionMemory(session_id=session_id)
+            return self._local[cache_key]
 
-    def get(self, session_id: str) -> Optional[SessionMemory]:
+    def get(self, user_id: str, session_id: str) -> Optional[SessionMemory]:
+        cache_key = self._cache_key(user_id, session_id)
         with self._lock:
-            return self._local.get(session_id)
+            return self._local.get(cache_key)
 
-    def delete(self, session_id: str) -> bool:
+    def delete(self, user_id: str, session_id: str) -> bool:
         """Remove from L1 cache (async Redis delete is handled by delete_remote)."""
+        cache_key = self._cache_key(user_id, session_id)
         with self._lock:
-            return self._local.pop(session_id, None) is not None
+            return self._local.pop(cache_key, None) is not None
 
     def session_count(self) -> int:
         with self._lock:
             return len(self._local)
 
     def all_session_ids(self) -> list[str]:
+        """Return all cache keys in format 'user_id:session_id'"""
         with self._lock:
             return list(self._local.keys())
 
     # ── Async interface ──────────────────────────────────────────────────────
 
-    async def ensure_loaded(self, session_id: str) -> SessionMemory:
+    async def ensure_loaded(self, user_id: str, session_id: str) -> SessionMemory:
         """
         Guarantee the session is in the L1 cache before a request is processed.
 
         Call this once per request at the top of the handler:
-            session = await redis_store.ensure_loaded(session_id)
+            session = await redis_store.ensure_loaded(user_id, session_id)
 
         After this call, assemble_messages() (sync) is safe to use.
         """
+        cache_key = self._cache_key(user_id, session_id)
         with self._lock:
-            if session_id in self._local:
-                return self._local[session_id]
+            if cache_key in self._local:
+                return self._local[cache_key]
 
         # Cache miss — attempt Redis load (outside lock to avoid blocking)
-        session = await self._load_from_redis(session_id)
+        session = await self._load_from_redis(user_id, session_id)
 
         with self._lock:
             # Double-checked lock: another coroutine may have created it
-            if session_id not in self._local:
-                self._local[session_id] = session
-            return self._local[session_id]
+            if cache_key not in self._local:
+                self._local[cache_key] = session
+            return self._local[cache_key]
 
-    async def _load_from_redis(self, session_id: str) -> SessionMemory:
+    async def _load_from_redis(self, user_id: str, session_id: str) -> SessionMemory:
         try:
-            raw = await self._redis().get(self._key(session_id))
+            raw = await self._redis().get(self._key(user_id, session_id))
             if raw:
                 session = _deserialize(raw)
                 logger.info(
-                    "[RedisStore:load] session=%s restored from Redis | "
+                    "[RedisStore:load] user=%s session=%s restored from Redis | "
                     "turn=%d | tier1=%d msgs | tier2=%d chunks | tier3=%s",
-                    session_id,
+                    user_id, session_id,
                     session.turn_counter,
                     len(session.tier1_buffer),
                     len(session.tier2_summaries),
@@ -220,42 +236,43 @@ class RedisConversationStore:
                 return session
 
             logger.info(
-                "[RedisStore:new] session=%s not found in Redis — starting fresh",
-                session_id,
+                "[RedisStore:new] user=%s session=%s not found in Redis — starting fresh",
+                user_id, session_id,
             )
         except Exception as exc:
             logger.error(
-                "[RedisStore:load_error] session=%s | Redis error: %s — "
+                "[RedisStore:load_error] user=%s session=%s | Redis error: %s — "
                 "starting with empty session",
-                session_id, exc,
+                user_id, session_id, exc,
             )
 
         return SessionMemory(session_id=session_id)
 
-    async def persist(self, session_id: str) -> None:
+    async def persist(self, user_id: str, session_id: str) -> None:
         """
         Serialise the current L1 session state and write it to Redis.
 
         Call after store_turn() and after each compression step to keep
         Redis in sync with in-memory state.
         """
+        cache_key = self._cache_key(user_id, session_id)
         with self._lock:
-            session = self._local.get(session_id)
+            session = self._local.get(cache_key)
 
         if session is None:
             logger.warning(
-                "[RedisStore:persist] session=%s not in L1 cache — skipping",
-                session_id,
+                "[RedisStore:persist] user=%s session=%s not in L1 cache — skipping",
+                user_id, session_id,
             )
             return
 
         try:
             raw = _serialize(session)
-            await self._redis().setex(self._key(session_id), self._ttl, raw)
+            await self._redis().setex(self._key(user_id, session_id), self._ttl, raw)
             logger.debug(
-                "[RedisStore:persist] session=%s saved | turn=%d | "
+                "[RedisStore:persist] user=%s session=%s saved | turn=%d | "
                 "tier1=%d msgs | tier2=%d chunks | tier3=%s | TTL=%ds | bytes=%d",
-                session_id,
+                user_id, session_id,
                 session.turn_counter,
                 len(session.tier1_buffer),
                 len(session.tier2_summaries),
@@ -265,32 +282,51 @@ class RedisConversationStore:
             )
         except Exception as exc:
             logger.error(
-                "[RedisStore:persist_error] session=%s | %s",
-                session_id, exc,
+                "[RedisStore:persist_error] user=%s session=%s | %s",
+                user_id, session_id, exc,
             )
 
-    def make_persist_fn(self, session_id: str) -> Callable[[], Coroutine]:
+    def make_persist_fn(self, user_id: str, session_id: str) -> Callable[[], Coroutine]:
         """
-        Return a zero-argument coroutine function that persists session_id.
+        Return a zero-argument coroutine function that persists user_id:session_id.
         Pass this into ATCE compression callbacks so tier transitions are
         written to Redis as soon as they complete.
 
         Usage in atce.py:
-            persist_fn = store.make_persist_fn(session_id)   # if store supports it
+            persist_fn = store.make_persist_fn(user_id, session_id)
             asyncio.create_task(_compress_tier1_overflow(session, cfg, persist_fn))
         """
         async def _persist():
-            await self.persist(session_id)
+            await self.persist(user_id, session_id)
         return _persist
 
-    async def delete_remote(self, session_id: str) -> None:
+    async def delete_remote(self, user_id: str, session_id: str) -> None:
         """Remove from both L1 cache and Redis."""
-        self.delete(session_id)
+        self.delete(user_id, session_id)
         try:
-            await self._redis().delete(self._key(session_id))
-            logger.info("[RedisStore:delete] session=%s removed from Redis", session_id)
+            await self._redis().delete(self._key(user_id, session_id))
+            logger.info("[RedisStore:delete] user=%s session=%s removed from Redis", user_id, session_id)
         except Exception as exc:
-            logger.error("[RedisStore:delete_error] session=%s | %s", session_id, exc)
+            logger.error("[RedisStore:delete_error] user=%s session=%s | %s", user_id, session_id, exc)
+
+    async def set_current_session(self, user_id: str, session_id: str) -> None:
+        """Track the user's current active session in Redis."""
+        try:
+            await self._redis().setex(self._current_session_key(user_id), self._ttl, session_id)
+            logger.debug("[RedisStore:set_current] user=%s current_session=%s", user_id, session_id)
+        except Exception as exc:
+            logger.error("[RedisStore:set_current_error] user=%s session=%s | %s", user_id, session_id, exc)
+
+    async def get_current_session(self, user_id: str) -> Optional[str]:
+        """Retrieve the user's current active session from Redis."""
+        try:
+            session_id = await self._redis().get(self._current_session_key(user_id))
+            if session_id:
+                logger.debug("[RedisStore:get_current] user=%s current_session=%s", user_id, session_id)
+            return session_id
+        except Exception as exc:
+            logger.error("[RedisStore:get_current_error] user=%s | %s", user_id, exc)
+            return None
 
     async def ping(self) -> bool:
         """Return True if Redis is reachable — used in /health check."""

@@ -22,7 +22,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Depends
 from openai import AsyncAzureOpenAI
 from pydantic import BaseModel
 import aiohttp
@@ -34,6 +34,8 @@ from context import (
     conversation_store,
     store_turn,
 )
+
+from core.auth import verify_service_token
 
 load_dotenv()
 
@@ -456,7 +458,7 @@ async def delete_session(session_id: str):
     return {"deleted": session_id, "store": "in-memory"}
 
 
-@app.post("/enrich", response_model=EnrichResponse)
+@app.post("/enrich", response_model=EnrichResponse, dependencies=[Depends(verify_service_token)])
 async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTasks):
     """
     Main enrichment endpoint (Dual-Mode).

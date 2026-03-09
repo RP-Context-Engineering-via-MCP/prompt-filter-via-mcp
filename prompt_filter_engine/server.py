@@ -1,11 +1,12 @@
 import os
 import uvicorn
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, Any
 
 from prompt_filter_engine.pii_detection.redactor import UniversalRedactor
+from prompt_filter_engine.core.auth import verify_service_token
 
 app = FastAPI(title="Prompt Filter Engine API")
 
@@ -43,7 +44,7 @@ def health_check():
     else:
         raise HTTPException(status_code=503, detail="Redactor not initialized")
 
-@app.post("/filter", response_model=FilterResponse)
+@app.post("/filter", response_model=FilterResponse, dependencies=[Depends(verify_service_token)])
 def filter_prompt(request: FilterRequest):
     if not redactor:
         raise HTTPException(status_code=503, detail="Redactor service unavailable")
