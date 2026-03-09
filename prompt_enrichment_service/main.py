@@ -46,6 +46,7 @@ USER_MANAGER_URL = os.environ.get("USER_MANAGER_URL", "http://localhost:8080")
 CHAT_LOGGER_URL = os.environ.get("CHAT_LOGGER_URL", "http://localhost:3005")
 PREDEFINED_PROFILE_URL = os.environ.get("PREDEFINED_PROFILE_URL", "http://localhost:8002")
 BEHAVIOR_EXTRACTION_URL = os.environ.get("BEHAVIOR_EXTRACTION_URL", "http://localhost:8001")
+CORE_BEHAVIOR_URL = os.environ.get("CORE_BEHAVIOR_URL", "http://localhost:6009/context")
 
 # ---------------------------------------------------------------------------
 # Active conversation store
@@ -236,7 +237,7 @@ async def get_behavior_extraction_data(prompt: str, user_id: str, session_id: st
             "recent_history": recent_history
         }
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=10) as response:
+            async with session.post(url, json=payload, timeout=15) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("extracted_behavior") or data.get("behavior") or str(data)
@@ -247,9 +248,34 @@ async def get_behavior_extraction_data(prompt: str, user_id: str, session_id: st
     return "No behavior extracted."
 
 
-async def get_user_core_behavior_extraction(user_id: str | None = None) -> str:
-    await asyncio.sleep(0.05)
-    return "Chathura will provide the core_behavior mock"
+async def get_user_core_behavior_extraction(user_id: str) -> str:
+    """Fetch the core behavior (identity anchor prompt) for the user from Chathura's service."""
+    if not user_id:
+        return "No Core Behavious found"
+    
+    try:
+        url = f"{CORE_BEHAVIOR_URL}/{user_id}"
+        logger.info(f"[CoreBehavior] Fetching context for user: {user_id} from {url}")
+        
+        async with aiohttp.ClientSession() as session:
+            # The user mentioned it's a GET/POST call, but the sample URL was http://localhost:6009/context/test_user_c
+            # and he said "i get post". Usually if the ID is in the URL, it's a GET. 
+            # Given "test_user_c this i get post", I'll try POST first as he mentioned "post".
+            # If he meant GET, the implementation remains similar.
+            async with session.post(url, timeout=5) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    anchor_prompt = data.get("identity_anchor_prompt")
+                    if anchor_prompt:
+                        return anchor_prompt
+                    else:
+                        logger.warning(f"[CoreBehavior] No identity_anchor_prompt in response for user {user_id}")
+                else:
+                    logger.warning(f"[CoreBehavior] Failed to fetch core behavior for {user_id}: {response.status}")
+    except Exception as exc:
+        logger.error(f"[CoreBehavior] Error fetching core behavior for user {user_id}: {exc}")
+    
+    return "No Core Behavious found"
 
 
 # ---------------------------------------------------------------------------
