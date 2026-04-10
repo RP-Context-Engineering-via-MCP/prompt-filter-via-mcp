@@ -52,14 +52,14 @@ class ATCEConfig:
     response_buffer: int = 1024
 
     # Maximum number of user/assistant PAIRS kept verbatim in Tier 1
-    # (10 pairs = 20 individual messages)
-    tier1_pair_limit: int = 10
+    # (3 pairs = 6 individual messages)
+    tier1_pair_limit: int = 3
 
     # When Tier 1 overflows, compress this many pairs at once into one Tier 2 chunk
     compression_chunk_pairs: int = 4   # → 8 individual messages per chunk
 
     # Maximum total tokens across all Tier 2 chunk summaries before Tier 3 merge
-    tier2_token_limit: int = 1500
+    tier2_token_limit: int = 1000
 
     # Target token count for the Tier 3 core memory after a merge
     tier3_target_tokens: int = 150

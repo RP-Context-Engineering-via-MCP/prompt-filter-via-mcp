@@ -1,81 +1,98 @@
-# Start All Services + ngrok Tunnel Script
-Write-Host "Starting Chat Application Services with ngrok Tunnel..." -ForegroundColor Green
+# Start All Services + ngrok Tunnel Script (Single Terminal)
+Write-Host ""
+Write-Host "=============================================" -ForegroundColor Green
+Write-Host "  Starting Chat Application Services..." -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
+Write-Host ""
 
 $root = "d:\SLIIIT\Research\Dev\chatApp"
+$processes = @()
 
-# 1. Start Prompt Filter Engine (Python/FastAPI)
-# This loads the SLM and listens on port 3003
-Write-Host "Launching Prompt Filter Engine (Port 3003)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- PROMPT FILTER ENGINE (PFE) ---' -ForegroundColor Yellow;
-    cd '$root\prompt_filter_engine';
-    `$env:PYTHONPATH='$root';
-    python server.py;
-}"
+# Helper to set PYTHONPATH for the session
+$env:PYTHONPATH = $root
 
-# Wait for Python to start initializing
-Start-Sleep -Seconds 2
-
-# 1.5 Start Prompt Enrichment Service (Python/FastAPI)
-# Listens on port 3004
-Write-Host "Launching Prompt Enrichment Service (Port 3004)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- PROMPT ENRICHMENT SERVICE ---' -ForegroundColor Yellow;
-    cd '$root\prompt_enrichment_service';
-    `$env:PYTHONPATH='$root';
-    python -m uvicorn main:app --port 3004 --reload;
-}"
+# 1. Prompt Filter Engine (Port 3003)
+Write-Host "[PFE]         Starting Prompt Filter Engine (Port 3003)..." -ForegroundColor Yellow
+$processes += Start-Process python -ArgumentList "server.py" `
+    -WorkingDirectory "$root\prompt_filter_engine" `
+    -NoNewWindow -PassThru
 
 Start-Sleep -Seconds 2
 
-# 2. Start MCP Server (Node.js)
-# Listens on port 3001 — exposes /sse (Claude Desktop) and /mcp (ChatGPT)
-Write-Host "Launching MCP Server (Port 3001)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- MCP SERVER ---' -ForegroundColor Magenta;
-    cd '$root\mcp-server';
-    npm start;
-}"
-
-# 3. Start Chat Logger Backend (Node.js)
-# Listens on port 3005
-Write-Host "Launching Chat Logger Backend (Port 3005)..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- CHAT LOGGER BACKEND ---' -ForegroundColor Green;
-    cd '$root\chat-logger-backend';
-    npm start;
-}"
+# 2. Prompt Enrichment Service (Port 3004)
+Write-Host "[ENRICHMENT]  Starting Prompt Enrichment Service (Port 3004)..." -ForegroundColor Yellow
+$processes += Start-Process python -ArgumentList "-m uvicorn main:app --port 3004 --reload" `
+    -WorkingDirectory "$root\prompt_enrichment_service" `
+    -NoNewWindow -PassThru
 
 Start-Sleep -Seconds 2
 
-# 4. Start Web Client (React/Vite)
-# Listens on generic dev port (likely 5173)
-Write-Host "Launching Web Client..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- WEB CLIENT ---' -ForegroundColor Cyan;
-    cd '$root\web-client';
-    npm run dev;
-}"
+# 3. MCP Server (Port 3001)
+Write-Host "[MCP]         Starting MCP Server (Port 3001)..." -ForegroundColor Magenta
+$processes += Start-Process node -ArgumentList "src/index.js" `
+    -WorkingDirectory "$root\mcp-server" `
+    -NoNewWindow -PassThru
+
+Start-Sleep -Seconds 2
+
+# 4. Chat Logger Backend (Port 3005)
+Write-Host "[LOGGER]      Starting Chat Logger Backend (Port 3005)..." -ForegroundColor Green
+$processes += Start-Process node -ArgumentList "src/server.js" `
+    -WorkingDirectory "$root\chat-logger-backend" `
+    -NoNewWindow -PassThru
+
+Start-Sleep -Seconds 2
+
+# 5. Web Client (Dev Server)
+Write-Host "[WEB]         Starting Web Client..." -ForegroundColor Cyan
+$processes += Start-Process node -ArgumentList "node_modules/vite/bin/vite.js" `
+    -WorkingDirectory "$root\web-client" `
+    -NoNewWindow -PassThru
 
 Start-Sleep -Seconds 3
 
-# 5. Start ngrok tunnel — exposes MCP Server port 3001 to the internet
-Write-Host "Launching ngrok tunnel (Port 3001 -> public HTTPS)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {
-    Write-Host '--- NGROK TUNNEL ---' -ForegroundColor Yellow;
-    Write-Host 'Waiting for MCP Server to be ready...' -ForegroundColor Gray;
-    Start-Sleep -Seconds 3;
-    ngrok http 3001 --response-header-add 'X-Accel-Buffering:no';
-}"
+# 6. ngrok Tunnel (Port 3001)
+Write-Host "[NGROK]       Starting ngrok tunnel (Port 3001)..." -ForegroundColor Yellow
+$processes += Start-Process ngrok -ArgumentList "http 3001 --response-header-add `"X-Accel-Buffering:no`"" `
+    -NoNewWindow -PassThru
 
 Write-Host ""
-Write-Host "All services launched in separate windows." -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
+Write-Host "  All services started!" -ForegroundColor Green
+Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "Local endpoints:" -ForegroundColor White
-Write-Host "  PFE:        http://localhost:3003/health"
-Write-Host "  MCP (SSE):  http://localhost:3001/sse       <- Claude Desktop / web-client"
-Write-Host "  MCP (HTTP): http://localhost:3001/mcp       <- ChatGPT"
+Write-Host "  PFE:        http://localhost:3003"
+Write-Host "  Enrichment: http://localhost:3004"
+Write-Host "  MCP (SSE):  http://localhost:3001/sse  <- Claude Desktop"
+Write-Host "  MCP (HTTP): http://localhost:3001/mcp  <- ChatGPT"
+Write-Host "  Logger:     http://localhost:3005"
+Write-Host "  Web Client: http://localhost:3002"
 Write-Host ""
-Write-Host "Once ngrok starts, copy the public URL from the ngrok window." -ForegroundColor Yellow
-Write-Host "Then add it to ChatGPT: Settings -> Connected apps -> Add MCP server" -ForegroundColor Yellow
-Write-Host "  URL format: https://<ngrok-id>.ngrok-free.app/mcp" -ForegroundColor Cyan
+Write-Host "Press Ctrl+C to stop all services." -ForegroundColor Red
+Write-Host ""
+
+# Keep the script running and wait for Ctrl+C
+try {
+    while ($true) {
+        # Check if any process has exited unexpectedly
+        foreach ($proc in $processes) {
+            if ($proc.HasExited) {
+                Write-Host "[WARNING] Process $($proc.ProcessName) (PID: $($proc.Id)) has exited with code $($proc.ExitCode)" -ForegroundColor Red
+            }
+        }
+        Start-Sleep -Seconds 5
+    }
+}
+finally {
+    # Cleanup: kill all child processes on exit
+    Write-Host ""
+    Write-Host "Stopping all services..." -ForegroundColor Red
+    foreach ($proc in $processes) {
+        if (-not $proc.HasExited) {
+            Write-Host "  Stopping $($proc.ProcessName) (PID: $($proc.Id))..." -ForegroundColor Yellow
+            Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+        }
+    }
+    Write-Host "All services stopped." -ForegroundColor Green
+}

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "memora": {
+      "url": "https://traducianistic-cohen-blowsiest.ngrok-free.dev/sse",
+      "headers": {
+        "Authorization": "Bearer mcp_76caa3b92d687201a48471df620ef0e75e2c6359d71b5ce6"
+      }
+    }
+  },
+  "preferences": {
+    "coworkScheduledTasksEnabled": false,
+    "sidebarMode": "chat",
+    "coworkWebSearchEnabled": true,
+    "ccdScheduledTasksEnabled": false
+  }
+}

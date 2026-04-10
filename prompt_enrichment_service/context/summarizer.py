@@ -40,6 +40,8 @@ Conversation segment:
 {conversation}
 """
 
+# TODO: We can get the user session and do more comprihansive summary in tier 2 -> tier 3
+
 _CORE_MEMORY_MERGE_PROMPT = """\
 Merge the following conversation summaries into a single ultra-compact \
 "core memory" of AT MOST {target_tokens} tokens.

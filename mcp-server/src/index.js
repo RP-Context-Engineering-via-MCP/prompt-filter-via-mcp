@@ -74,7 +74,11 @@ app.get('/sse', async (req, res) => {
         transports.delete(transport.sessionId);
     });
 
-    const mcpServer = createMcpServer();
+    const clientToken = req.query.token || 
+                        (req.headers.authorization ? req.headers.authorization.replace('Bearer ', '') : null) || 
+                        req.headers['x-mcp-token'];
+
+    const mcpServer = createMcpServer(clientToken);
     await mcpServer.connect(transport);
 });
 
@@ -129,7 +133,11 @@ app.post('/mcp', async (req, res) => {
             }
         };
 
-        const mcpServer = createMcpServer();
+        const clientToken = req.query.token || 
+                            (req.headers.authorization ? req.headers.authorization.replace('Bearer ', '') : null) || 
+                            req.headers['x-mcp-token'];
+
+        const mcpServer = createMcpServer(clientToken);
         await mcpServer.connect(transport);
         await transport.handleRequest(req, res, req.body);
         return;

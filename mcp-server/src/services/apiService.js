@@ -2,7 +2,7 @@
  * API Service — POSTs chat log data to the Chat Logger Backend
  */
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3005';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3005';
 
 /**
  * Log a chat interaction to the backend
@@ -28,7 +28,7 @@ export async function logChat(data) {
         }
 
         const result = await response.json();
-        console.log(`[apiService] Chat logged successfully, id: ${result._id}`);
+        console.error(`[apiService] Chat logged successfully, id: ${result._id}`);
         return { success: true, id: result._id };
     } catch (error) {
         console.error(`[apiService] Failed to log chat:`, error.message);
