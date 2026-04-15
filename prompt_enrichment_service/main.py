@@ -89,6 +89,17 @@ class EnrichResponse(BaseModel):
     session_id: str
     turn_index: int
 
+class StoreTurnRequest(BaseModel):
+    session_id: str          # full session key e.g. "user_id::default"
+    user_message: str
+    llm_response: str
+    user_id: str | None = None
+    selected_session_id: str | None = None
+
+class StoreTurnResponse(BaseModel):
+    session_id: str
+    turn_index: int
+
 # ---------------------------------------------------------------------------
 # Background task: store turn + persist to Redis
 # ---------------------------------------------------------------------------
@@ -184,6 +195,39 @@ async def delete_session(session_id: str):
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": session_id, "store": "in-memory"}
+
+
+@app.post("/store_turn", response_model=StoreTurnResponse)
+async def store_mcp_turn(request: StoreTurnRequest, background_tasks: BackgroundTasks):
+    """
+    Called by the MCP capture_chat tool after the LLM responds.
+    Stores the user/assistant turn directly into ATCE (Redis) so future
+    process_prompt calls have history context.
+    """
+    logger.info(
+        f"[StoreTurn] session={request.session_id} | user_id={request.user_id} | "
+        f"prompt_len={len(request.user_message)} | response_len={len(request.llm_response)}"
+    )
+
+    store = active_store or conversation_store
+
+    if active_store is not None:
+        await active_store.ensure_loaded(request.session_id)
+
+    background_tasks.add_task(
+        _store_and_persist,
+        session_id=request.session_id,
+        user_message=request.user_message,
+        llm_response=request.llm_response,
+        user_id=request.user_id,
+        selected_session_id=request.selected_session_id,
+    )
+
+    session = store.get_or_create(request.session_id)
+    return StoreTurnResponse(
+        session_id=request.session_id,
+        turn_index=session.turn_counter + 1,
+    )
 
 
 @app.post("/enrich", response_model=EnrichResponse)

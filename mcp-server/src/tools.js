@@ -148,7 +148,34 @@ export function createMcpServer(clientToken = null) {
             console.error(`[MCP Server] capture_chat called | user_id: ${user_id} | session: ${session_id || 'none'} | source: ${source} | prompt_len: ${user_prompt.length} | response_len: ${llm_response.length}`);
 
             try {
-                const result = await logChat({
+                // Determine the full ATCE session key (must match what /enrich builds)
+                const selectedSession = session_id || 'default';
+                const atceSessionId = `${resolved_user_id}::${selectedSession}`;
+
+                // 1. Store turn in ATCE/Redis (enrichment service)
+                const enrichApiUrl = process.env.PROMPT_ENRICHMENT_API_URL || 'http://127.0.0.1:3004';
+                const storeTurnPromise = fetch(`${enrichApiUrl}/store_turn`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: atceSessionId,
+                        user_message: user_prompt,
+                        llm_response: llm_response,
+                        user_id: resolved_user_id,
+                        selected_session_id: selectedSession,
+                    })
+                }).then(async (r) => {
+                    if (!r.ok) {
+                        const txt = await r.text();
+                        console.error(`[capture_chat] /store_turn returned ${r.status}: ${txt}`);
+                    } else {
+                        const d = await r.json();
+                        console.error(`[capture_chat] ATCE turn stored | session=${atceSessionId} | turn=${d.turn_index}`);
+                    }
+                }).catch((e) => console.error(`[capture_chat] /store_turn error: ${e.message}`));
+
+                // 2. Log to chat-logger-backend (MongoDB) in parallel
+                const logChatPromise = logChat({
                     user_prompt,
                     llm_response,
                     session_id,
@@ -156,6 +183,8 @@ export function createMcpServer(clientToken = null) {
                     user_id: resolved_user_id,
                     metadata: { model }
                 });
+
+                const [, result] = await Promise.all([storeTurnPromise, logChatPromise]);
 
                 if (result.success) {
                     return {

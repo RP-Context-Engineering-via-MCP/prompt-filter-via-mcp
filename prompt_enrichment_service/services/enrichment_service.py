@@ -48,7 +48,10 @@ async def sync_mcp_turns(session_id: str, user_id: str, selected_session_id: str
         session = store.get_or_create(session_id)
         current_turn = session.turn_counter
 
-        url = f"{CHAT_LOGGER_URL}/api/chats?user_id={user_id}&selected_session_id={selected_session_id}&limit=100"
+        # Query by user_id only — no selected_session_id filter.
+        # The browser extension may save with a different or null selected_session_id
+        # (whatever is in chrome.storage.sync), so filtering by it would miss those logs.
+        url = f"{CHAT_LOGGER_URL}/api/chats?user_id={user_id}&limit=100"
 
         logger.info(
             f"[sync_mcp_turns] session={session_id} | fetching unsynced turns | current_atce_turn={current_turn}"
