@@ -148,9 +148,19 @@ export function createMcpServer(clientToken = null) {
             console.error(`[MCP Server] capture_chat called | user_id: ${user_id} | session: ${session_id || 'none'} | source: ${source} | prompt_len: ${user_prompt.length} | response_len: ${llm_response.length}`);
 
             try {
-                // Determine the full ATCE session key (must match what /enrich builds)
-                const selectedSession = session_id || 'default';
-                const atceSessionId = `${resolved_user_id}::${selectedSession}`;
+                // Resolve the current session from User Manager to match the key /enrich builds
+                let currentSession = 'default';
+                try {
+                    const umUrl = process.env.USER_MANAGER_URL || 'http://127.0.0.1:8000';
+                    const sessionRes = await fetch(`${umUrl}/api/users/${resolved_user_id}/current-session`);
+                    if (sessionRes.ok) {
+                        const sessionData = await sessionRes.json();
+                        currentSession = sessionData.current_session_id || 'default';
+                    }
+                } catch (e) {
+                    console.error(`[capture_chat] Failed to fetch current session: ${e.message}`);
+                }
+                const atceSessionId = `${resolved_user_id}::${currentSession}`;
 
                 // 1. Store turn in ATCE/Redis (enrichment service)
                 const enrichApiUrl = process.env.PROMPT_ENRICHMENT_API_URL || 'http://127.0.0.1:3004';
@@ -162,7 +172,7 @@ export function createMcpServer(clientToken = null) {
                         user_message: user_prompt,
                         llm_response: llm_response,
                         user_id: resolved_user_id,
-                        selected_session_id: selectedSession,
+                        selected_session_id: currentSession,
                     })
                 }).then(async (r) => {
                     if (!r.ok) {

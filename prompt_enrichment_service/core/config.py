@@ -5,14 +5,14 @@ from context import ATCEConfig
 load_dotenv()
 
 # Service URLs
-USER_MANAGER_URL = os.environ.get("USER_MANAGER_URL", "http://localhost:8080")
+USER_MANAGER_URL = os.environ.get("USER_MANAGER_URL", "http://localhost:8000")
 CHAT_LOGGER_URL = os.environ.get("CHAT_LOGGER_URL", "http://localhost:3005")
 PREDEFINED_PROFILE_URL = os.environ.get("PREDEFINED_PROFILE_URL", "http://localhost:8002")
 BEHAVIOR_EXTRACTION_URL = os.environ.get("BEHAVIOR_EXTRACTION_URL", "http://localhost:8001")
 CORE_BEHAVIOR_URL = os.environ.get("CORE_BEHAVIOR_URL", "http://localhost:6009/context")
 
 # Redis Config
-REDIS_URL = os.environ.get("REDIS_URL", "")
+REDIS_URL = os.environ.get("REDIS_URL", "redis://default:4SSKIbQ1aCuRRCfmkAlbiZynWXR3rxVy@redis-14142.c265.us-east-1-2.ec2.cloud.redislabs.com:14142")
 REDIS_SESSION_TTL = int(os.environ.get("REDIS_SESSION_TTL", 432000))
 
 # ATCE Config

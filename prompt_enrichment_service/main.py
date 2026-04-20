@@ -219,7 +219,7 @@ async def store_mcp_turn(request: StoreTurnRequest, background_tasks: Background
         session_id=request.session_id,
         user_message=request.user_message,
         llm_response=request.llm_response,
-        user_id=request.user_id,
+        user_id=None,  # capture_chat already logs to chat-logger via logChat
         selected_session_id=request.selected_session_id,
     )
 
@@ -266,17 +266,27 @@ async def enrich_prompt(request: EnrichRequest, background_tasks: BackgroundTask
         user_context, last_source = await fetch_user_context(request.prompt, request.user_id, current_session)
         logger.info(f"[EnrichService:mcp_context] fetched context | lat={time.monotonic() - t0:.3f}s")
 
-        atce_history_str = ""
         current_client = request.mcp_client or request.source
+        send_context = False
         
-        if current_client and last_source and current_client != last_source:
-            logger.info(f"[EnrichService:mcp] Client switch: {last_source} -> {current_client}. Injecting history.")
-            session_mem = store.get(actual_session_id)
-            atce_history_str = format_atce_history(session_mem)
+        if not last_source:
+            logger.info(f"[EnrichService:mcp] First message. Injecting context for {current_client}.")
+            send_context = True
+        elif current_client != last_source:
+            logger.info(f"[EnrichService:mcp] Client switch: {last_source} -> {current_client}. Injecting context & history.")
+            send_context = True
+        else:
+            logger.info(f"[EnrichService:mcp] Continuing with {current_client}. Skipping context injection.")
 
-        enriched_prompt = f"{user_context}\n\n"
-        if atce_history_str:
-            enriched_prompt += f"{atce_history_str}\n"
+        enriched_prompt = ""
+        if send_context:
+            enriched_prompt += f"{user_context}\n\n"
+            if last_source:
+                session_mem = store.get(actual_session_id)
+                atce_history_str = format_atce_history(session_mem)
+                if atce_history_str:
+                    enriched_prompt += f"{atce_history_str}\n"
+                    
         enriched_prompt += f"User Prompt: {request.prompt}"
 
         logger.debug(f"\n[MCP ENRICHED PROMPT]\n{enriched_prompt}\n")
