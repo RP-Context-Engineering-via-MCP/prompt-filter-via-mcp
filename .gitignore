@@ -94,3 +94,4 @@ prompt_filter_engine/tests/test_entity_pipeline.py
 # Ignore IDE / Tool generated folders
 .claude/
 archiDoc/
+hf-cache/

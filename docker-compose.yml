@@ -14,7 +14,7 @@ services:
       - PYTHONPATH=/app
     volumes:
       - ./traning-dataset:/app/traning-dataset
-      - hf-cache:/root/.cache/huggingface
+      - ./hf-cache:/root/.cache/huggingface
     restart: unless-stopped
     networks:
       - chat-app-network
@@ -94,5 +94,4 @@ networks:
     name: chat-app-network
     driver: bridge
 
-volumes:
-  hf-cache:
+volumes: {}

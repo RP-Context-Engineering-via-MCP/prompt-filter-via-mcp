@@ -10,7 +10,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Install dependencies first to leverage Docker cache
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN --mount=type=cache,target=/root/.cache/pip pip install -r requirements.txt
 
 # Copy the source code into the prompt_filter_engine directory so it aligns with Python package name
 COPY . /app/prompt_filter_engine
